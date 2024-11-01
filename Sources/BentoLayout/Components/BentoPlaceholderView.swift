@@ -13,18 +13,33 @@ struct BentoPlaceholderView<Item: BentoItem>: View {
     var items: [Item] { bentoModel.items }
     
     var body: some View {
-        LazyVGrid(columns: bentoModel.gridColumns, spacing: 0) {
-            ForEach(bentoModel.placehoders, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(.placeholder, style: StrokeStyle(lineWidth: 1, dash: [5]))
-                    .frame(
-                        width: bentoModel.bentoBaseSize + bentoModel.bentoGap,
-                        height: bentoModel.bentoBaseSize + bentoModel.bentoGap
-                    )
-                    .opacity(bentoModel.isDragging || bentoModel.isResizing ? 1 : 0)
+        //        LazyVGrid(columns: bentoModel.gridColumns, spacing: bentoModel.bentoGap) {
+        //            ForEach(0..<bentoModel.gridOccupies.flatMap{$0}.count, id: \.self) { _ in
+        //                Rectangle()
+        //                    .fill(.red.opacity(0.5))
+        //                    .frame(
+        ////                        width: bentoModel.minItemSize.width,
+        //                        height: bentoModel.minItemSize.height
+        //                    )
+        //            }
+        //        }
+        VStack(spacing: 0) {
+            ForEach(Array(bentoModel.gridOccupies.enumerated()), id: \.offset) { i, e in
+                HStack(spacing: 0) {
+                    ForEach(Array(e.enumerated()), id: \.offset) { j, _ in
+                        Rectangle()
+                            .fill(.red.opacity(0.2))
+                            .stroke(.red.opacity(0.5))
+                            .frame(
+                                width: bentoModel.minItemSize.width,
+                                height: bentoModel.minItemSize.height
+                            )
+                    }
+                }
             }
         }
         .animation(.default, value: bentoModel.isDragging || bentoModel.isResizing)
+        .frame(width: bentoModel.containerSize.width, height: bentoModel.containerSize.height, alignment: .topLeading)
     }
 }
 

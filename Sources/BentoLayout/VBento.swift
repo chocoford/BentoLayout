@@ -52,7 +52,7 @@ public struct VBento<Item: BentoItem, ItemContent: View>: View {
         ZStack(alignment: .topLeading) {
             Rectangle().fill(Color.clear)
             
-            BentoPlaceholderView<Item>()
+//            BentoPlaceholderView<Item>()
             
             ZStack(alignment: .topLeading) {
                 // anchor top
@@ -64,7 +64,7 @@ public struct VBento<Item: BentoItem, ItemContent: View>: View {
                 alignment: .topLeading
             )
             
-            BentoDropLayerView<Item>()
+//            BentoDropLayerView<Item>()
         }
 //        .background {
 //            BentoPlaceholderView<Item>()
@@ -78,10 +78,15 @@ public struct VBento<Item: BentoItem, ItemContent: View>: View {
         .background {
             GeometryReader { geometry in
                 Rectangle()
-                    .fill(.clear)
+                    .fill(.blue.gradient.opacity(0))
                     .onChange(of: geometry.size, initial: true) { oldValue, newValue in
                         bentoModel.containerSize = newValue
                     }
+            }
+        }
+        .onChange(of: bentoModel.containerSize) { oldValue, newValue in
+            if newValue.width > oldValue.width || newValue.height > oldValue.height  {
+                bentoModel.flushGridOccupyState()
             }
         }
         .environment(bentoModel)

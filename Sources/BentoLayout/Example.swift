@@ -39,7 +39,7 @@ internal struct BentoExampleView: View {
                     .shadow(radius: 2)
                     .overlay {
                         VStack {
-                            Text("(\(item.x), \(item.y), \(item.width), \(item.height))")
+                            Text("(\(item.x), \(item.y), \(item.width), \(item.height)")
                             if !item.restrictions.isEmpty {
                                 ForEach(item.restrictions, id: \.self) { restriction in
                                     Text(String(describing: restriction))
@@ -52,7 +52,7 @@ internal struct BentoExampleView: View {
                         print("OnTap - \(item.id)")
                     }
             }
-            .padding()
+            .padding(60)
             .containerRelativeFrame(.horizontal)
         }
         .overlay(alignment: .bottomTrailing) {
@@ -71,11 +71,11 @@ internal struct BentoExampleView: View {
                 
                 if !inEdit {
                     Button {
-                        let width = Int.random(in: 4...10)
-                        let height = Int.random(in: 4...10)
+                        let width = Double.random(in: 40...100)
+                        let height = Double.random(in: 40...100)
                         let bentoItem = DefaultBentoItem(
-                            x: max(0, Int.random(in: 0..<bentoModel.columnsCount) - width),
-                            y: max(0, Int.random(in: 0..<bentoModel.columnsCount) - height),
+                            x: 0,
+                            y: 0,
                             width: width,
                             height: height
                         )

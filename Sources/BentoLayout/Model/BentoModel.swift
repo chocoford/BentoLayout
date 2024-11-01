@@ -7,6 +7,9 @@
 
 import SwiftUI
 
+import ChocofordUI
+import ChocofordEssentials
+
 public enum BentoEvent<Item: BentoItem> {
     case didInsert(Item)
     case didRemove(UUID)
@@ -16,16 +19,16 @@ public enum BentoEvent<Item: BentoItem> {
 public class BentoModel<Item: BentoItem> {
     public var items: [Item]
     
-//    private var minItemSize: CGSize {
-//        items.reduce(
-//            CGSize(
-//                width: CGFloat.greatestFiniteMagnitude,
-//                height: CGFloat.greatestFiniteMagnitude
-//            )
-//        ) {
-//            CGSize(width: min($0.width, $1.width), height: min($0.width, $1.width))
-//        }
-//    }
+    internal var minItemSize: CGSize {
+        items.reduce(
+            CGSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        ) {
+            CGSize(width: min($0.width, $1.width), height: min($0.width, $1.width))
+        }
+    }
     
     public init() where Item == DefaultBentoItem {
         self.items = []
@@ -38,12 +41,19 @@ public class BentoModel<Item: BentoItem> {
     ) {
         self._items = items
         self.eventsHandler = eventsHandler
+        
+        
     }
     
     public var eventsHandler: (BentoEvent<Item>) -> Void
     
     public var containerSize: CGSize = .zero
-    public let gridColumns: [GridItem] = .init(repeating: GridItem(.flexible()), count: 12)
+    public var gridColumns: [GridItem] {
+        .init(
+            repeating: GridItem(.flexible()),
+            count: Int(ceil(containerSize.width / minItemSize.width))
+        )
+    }
     public let pagePadding: CGFloat = 0
     public var bentoBaseSize: CGFloat {
         max(0, (containerSize.width - 2 * pagePadding - Double(columnsCount - 1) * bentoGap) / Double(columnsCount))
@@ -52,12 +62,12 @@ public class BentoModel<Item: BentoItem> {
     
     public var columnsCount: Int { gridColumns.count }
     public let paddingRows = 6
-    public var placehoders: [Int] {
-        Array(
-            repeating: 0,
-            count: columnsCount * (items.reduce(0, {max($0, $1.y + $1.height)}) + paddingRows)
-        ).enumerated().map{$0.offset}
-    }
+//    public var placehoders: [Int] {
+//        Array(
+//            repeating: 0,
+//            count: columnsCount * (items.reduce(0, {max($0, $1.y + $1.height)}) + paddingRows)
+//        ).enumerated().map{$0.offset}
+//    }
     
     public var draggedItem: Item?
     public var isDragging = false
@@ -92,7 +102,7 @@ public class BentoModel<Item: BentoItem> {
     /// 把所有冲突的bento item挤下去
     public func forceTransformItem(_ itemID: UUID, to newItem: Item) {
         guard let itemIndex = self.items.firstIndex(where: {$0.itemID == itemID}) else { return }
-        guard newItem.x >= 0, newItem.y >= 0, newItem.x + newItem.width <= columnsCount else { return }
+        guard newItem.x >= 0, newItem.y >= 0/*, newItem.x + newItem.width <= columnsCount*/ else { return }
         
         withAnimation(.bouncy(duration: 0.4)) {
             items[itemIndex].x = newItem.x
@@ -146,6 +156,9 @@ public class BentoModel<Item: BentoItem> {
     
     /// Insert a new bento item.
     public func addBentoItem(_ item: Item) {
+        // temp
+        defer { flushGridOccupyState() }
+        
         var item = item
         
         var isOverlap = false
@@ -162,29 +175,12 @@ public class BentoModel<Item: BentoItem> {
             return
         }
         
-        var y = 0
+        var y: CGFloat = 0
         
-        while true {
-            for i in 0..<columnsCount {
-                var newBentoItem = item.duplicated(withSameID: false)
-                newBentoItem.x = i
-                newBentoItem.y = y
-                if self.items.allSatisfy({ !newBentoItem.checkIsOverlay(with: $0) }) {
-                    item.x = newBentoItem.x
-                    item.y = newBentoItem.y
-                    self.items.append(item)
-                    self.eventsHandler(.didInsert(item))
-                    return
-                }
-            }
-        }
-        
-//        var tryCount = 0
-//        while tryCount < 1_000_000 {
-//            defer { tryCount += 1 }
-//            for x in stride(from: 0, to: containerSize.width - item.width, by: minItemSize.width) {
+//        while true {
+//            for i in 0..<columnsCount {
 //                var newBentoItem = item.duplicated(withSameID: false)
-//                newBentoItem.x = x
+//                newBentoItem.x = i
 //                newBentoItem.y = y
 //                if self.items.allSatisfy({ !newBentoItem.checkIsOverlay(with: $0) }) {
 //                    item.x = newBentoItem.x
@@ -194,8 +190,26 @@ public class BentoModel<Item: BentoItem> {
 //                    return
 //                }
 //            }
-//            y += minItemSize.height
 //        }
+        
+        var tryCount = 0
+        while tryCount < 1_000_000 {
+            defer { tryCount += 1 }
+            for x in stride(from: 0, to: containerSize.width - item.width, by: minItemSize.width + bentoGap) {
+                var newBentoItem = item.duplicated(withSameID: false)
+                newBentoItem.x = x
+                newBentoItem.y = y
+                if self.items.allSatisfy({ !newBentoItem.checkIsOverlay(with: $0) }) {
+                    item.x = newBentoItem.x
+                    item.y = newBentoItem.y
+                    self.items.append(item)
+                    self.eventsHandler(.didInsert(item))
+                    return
+                }
+            }
+            y += minItemSize.height + bentoGap
+        }
+        
    }
    
     public func removeBentoItem(_ item: Item) {
@@ -249,6 +263,122 @@ public class BentoModel<Item: BentoItem> {
 //            
 //        }
 //    }
+    
+    /// n rows x m colums
+    var gridOccupies: [[[UUID]]] = []
+    /// true - occupied
+    var gridOccupyState: [[Bool]] {
+        gridOccupies.map {
+            $0.map {
+                !$0.isEmpty
+            }
+        }
+    }
+    
+    func flushGridOccupyState() {
+        let start = Date()
+        gridOccupies = stride(from: 0, to: containerSize.height, by: minItemSize.height).map { y in
+            stride(from: 0, to: containerSize.width, by: minItemSize.width).map { x in
+                let rect = CGRect(x: x, y: y, width: minItemSize.width, height: minItemSize.height)
+                return self.items.filter{ $0.frame.intersects(rect) }.map{ $0.itemID }
+            }
+        }
+        print(
+            "[flushGridOccupyState] time cost: \(-start.timeIntervalSinceNow)",
+            "gridOccupies: [\(gridOccupies.count) x \(gridOccupies.first?.count ?? 0)] count: \(gridOccupies.flatMap{$0}.count)",
+            "containerSize: \(containerSize), minItemSize: \(minItemSize)",
+            "gridOccupies: \(gridOccupies)",
+            "---------------------------------",
+            separator: "\n"
+        )
+    }
+    
+    private func getGridItems(at point: CGPoint) -> [Item] {
+        let wIndex = Int(point.x / minItemSize.width)
+        let hIndex = Int(point.y / minItemSize.height)
+        guard gridOccupyState.count > hIndex, gridOccupyState[hIndex].count > wIndex else {
+            return []
+        }
+        
+        let rect = CGRect(
+            x: CGFloat(wIndex) * minItemSize.width,
+            y: CGFloat(hIndex) * minItemSize.height,
+            width: minItemSize.width,
+            height: minItemSize.height
+        )
+        
+        if !gridOccupyState[hIndex][wIndex] { return [] }
+        
+        return self.items.filter({$0.frame.intersects(rect)})
+    }
+    
+    func getPotentialHinderItems(of item: Item) -> [Item] {
+        let frame = item.frame
+        let itemsMap = self.items.filter({$0.itemID != item.itemID}).map {
+            [$0.itemID : $0]
+        }.merged()
+        
+        var hinders = Set<Item>()
+        // get grid items
+        for y in stride(
+            from: max(0, Int(frame.minY / minItemSize.height) - 1),
+            through: min(Int(containerSize.height / minItemSize.height), Int(frame.maxY / minItemSize.height) + 1),
+            by: 1
+        ) {
+            for x in stride(
+                from: max(0, Int(frame.minX / minItemSize.width) - 1),
+                through: min(Int(containerSize.width / minItemSize.width), Int(frame.maxX / minItemSize.width) + 1),
+                by: 1
+            ) {
+                for itemID in gridOccupies[y][x] {
+                    if let item = itemsMap[itemID] {
+                        hinders.insert(item)
+                    }
+                }
+            }
+        }
+//        print(#function, hinders)
+        return Array(hinders)
+    }
+}
+
+func getHinderItems<Item: BentoItem>(of item: Item, from items: [Item], direction: UnitPoint) -> [Item] {
+    var hinders: [Item] = []
+    switch direction {
+        case .top:
+            hinders = items.filter {
+                item.frame.minX < $0.frame.maxX &&
+                item.frame.maxX > $0.frame.minX &&
+                item.frame.minY >= $0.frame.midY
+            }
+        case .bottom:
+            hinders = items.filter {
+                item.frame.minX < $0.frame.maxX &&
+                item.frame.maxX > $0.frame.minX &&
+                item.frame.maxY <= $0.frame.midY
+            }
+            
+        case .leading:
+            hinders = items.filter {
+                item.frame.minY < $0.frame.maxY &&
+                item.frame.maxY > $0.frame.minY &&
+                item.frame.minX >= $0.frame.midX
+            }
+            
+        case .trailing:
+            hinders = items.filter {
+                item.frame.minY < $0.frame.maxY &&
+                item.frame.maxY > $0.frame.minY &&
+                item.frame.maxX <= $0.frame.midX
+            }
+            
+        default:
+            hinders = []
+    }
+    
+    print(#function, "direction: \(direction), hinders: \(hinders)")
+    
+    return hinders
 }
 
 

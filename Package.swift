@@ -6,7 +6,8 @@ import PackageDescription
 let package = Package(
     name: "BentoLayout",
     platforms: [
-        .macOS(.v14), .iOS(.v17)
+        .macOS(.v14),
+        .iOS(.v17)
     ],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
@@ -14,11 +15,19 @@ let package = Package(
             name: "BentoLayout",
             targets: ["BentoLayout"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/chocoford/ChocofordKit.git", branch: "main"),
+    ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "BentoLayout"),
+            name: "BentoLayout",
+            dependencies: [
+                .product(name: "ChocofordEssentials", package: "ChocofordKit"),
+                .product(name: "ChocofordUI", package: "ChocofordKit"),
+            ]
+        ),
         .testTarget(
             name: "BentoLayoutTests",
             dependencies: ["BentoLayout"]
