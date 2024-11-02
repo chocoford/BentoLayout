@@ -7,33 +7,6 @@
 
 import SwiftUI
 
-internal struct VBentoLayout<Item: BentoItem>: Layout {
-    @Environment(BentoModel<Item>.self) var bentoModel
-    var items: [Item]
-    
-    
-    public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 10
-        
-        
-        
-        return CGSize(
-            width: width,
-            height: 10 //bentoModel.columnsCount
-        )
-    }
-    
-    public func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-//        print("placeSubviews(in bounds: \(bounds), proposal: \(proposal), subviews: \(subviews), cache: inout ())")
-//        subviews.first?.place(at: .zero, proposal: <#T##ProposedViewSize#>)
-        
-        for subview in subviews {
-            
-        }
-    }
-}
-
-
 public struct VBento<Item: BentoItem, ItemContent: View>: View {
     var bentoModel: BentoModel<Item>
     var content: (Item) -> ItemContent
@@ -52,7 +25,7 @@ public struct VBento<Item: BentoItem, ItemContent: View>: View {
         ZStack(alignment: .topLeading) {
             Rectangle().fill(Color.clear)
             
-//            BentoPlaceholderView<Item>()
+            BentoPlaceholderView<Item>()
             
             ZStack(alignment: .topLeading) {
                 // anchor top
@@ -64,16 +37,8 @@ public struct VBento<Item: BentoItem, ItemContent: View>: View {
                 alignment: .topLeading
             )
             
-//            BentoDropLayerView<Item>()
-        }
-//        .background {
-//            BentoPlaceholderView<Item>()
-//        }
-//        .padding(.horizontal, pagePadding)
-//        .containerRelativeFrame(.horizontal)
-        .dropDestination(for: Item.self) { items, location in
-            bentoModel.isDragging = false
-            return true
+            // Auxiliary line
+            AuxiliaryLineView<Item>()
         }
         .background {
             GeometryReader { geometry in

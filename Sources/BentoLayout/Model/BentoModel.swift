@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 import ChocofordUI
 import ChocofordEssentials
@@ -17,7 +18,17 @@ public enum BentoEvent<Item: BentoItem> {
 
 @Observable
 public class BentoModel<Item: BentoItem> {
-    public var items: [Item]
+    public var items: [Item] {
+        get {
+            undoManager.currentItems
+        }
+        
+        set {
+            undoManager.currentItems = newValue
+        }
+    }
+    
+    public private(set) var undoManager: BentoUndoManager<Item> = BentoUndoManager()
     
     internal var minItemSize: CGSize {
         items.reduce(
@@ -26,23 +37,21 @@ public class BentoModel<Item: BentoItem> {
                 height: CGFloat.greatestFiniteMagnitude
             )
         ) {
-            CGSize(width: min($0.width, $1.width), height: min($0.width, $1.width))
+            CGSize(width: min($0.width, $1.width), height: min($0.height, $1.height))
         }
     }
     
     public init() where Item == DefaultBentoItem {
-        self.items = []
         self.eventsHandler = { (_: BentoEvent<Item>) -> Void in }
+        self.items = []
     }
     
     public init(
         items: [Item] = [],
         eventsHandler: @escaping (BentoEvent<Item>) -> Void = { _ in }
     ) {
-        self._items = items
         self.eventsHandler = eventsHandler
-        
-        
+        self.items = items
     }
     
     public var eventsHandler: (BentoEvent<Item>) -> Void
@@ -51,7 +60,7 @@ public class BentoModel<Item: BentoItem> {
     public var gridColumns: [GridItem] {
         .init(
             repeating: GridItem(.flexible()),
-            count: Int(ceil(containerSize.width / minItemSize.width))
+            count: max(0, Int(ceil(containerSize.width / minItemSize.width)))
         )
     }
     public let pagePadding: CGFloat = 0
@@ -69,8 +78,11 @@ public class BentoModel<Item: BentoItem> {
 //        ).enumerated().map{$0.offset}
 //    }
     
-    public var draggedItem: Item?
-    public var isDragging = false
+    public var draggedItemID: UUID?
+    public var draggedItem: Item? {
+        get { items.first(where: {$0.itemID == draggedItemID}) }
+    }
+    public var isDragging: Bool { draggedItemID != nil }
     public var isResizing = false
     
     private func findConflictItems(with item: Item) -> [Item] {
@@ -88,7 +100,7 @@ public class BentoModel<Item: BentoItem> {
             })
     }
     
-    /// Get the top adjacent items.
+    /// Get the bottom adjacent items.
     private func getBottomAdjacentItems(of item: Item) -> [Item] {
         self.items
             .filter({$0.itemID != item.itemID})
@@ -96,6 +108,16 @@ public class BentoModel<Item: BentoItem> {
                 $0.y > item.y &&
                 $0.x < item.x + item.width &&
                 $0.x + $0.width > item.x
+            })
+    }
+    
+    private func getTrailingAdjacentItems(of item: Item) -> [Item] {
+        self.items
+            .filter({$0.itemID != item.itemID})
+            .filter({
+                item.x > $0.x &&
+                $0.y < item.y + item.height &&
+                $0.y + $0.height > item.y
             })
     }
     
@@ -157,7 +179,7 @@ public class BentoModel<Item: BentoItem> {
     /// Insert a new bento item.
     public func addBentoItem(_ item: Item) {
         // temp
-        defer { flushGridOccupyState() }
+        defer { flushState() }
         
         var item = item
         
@@ -176,21 +198,6 @@ public class BentoModel<Item: BentoItem> {
         }
         
         var y: CGFloat = 0
-        
-//        while true {
-//            for i in 0..<columnsCount {
-//                var newBentoItem = item.duplicated(withSameID: false)
-//                newBentoItem.x = i
-//                newBentoItem.y = y
-//                if self.items.allSatisfy({ !newBentoItem.checkIsOverlay(with: $0) }) {
-//                    item.x = newBentoItem.x
-//                    item.y = newBentoItem.y
-//                    self.items.append(item)
-//                    self.eventsHandler(.didInsert(item))
-//                    return
-//                }
-//            }
-//        }
         
         var tryCount = 0
         while tryCount < 1_000_000 {
@@ -215,29 +222,50 @@ public class BentoModel<Item: BentoItem> {
     public func removeBentoItem(_ item: Item) {
         self.items.removeAll(where: {$0.itemID == item.itemID})
         self.eventsHandler(.didRemove(item.itemID))
+        flushState()
     }
     
     public func removeBentoItem(id itemID: UUID) {
         self.items.removeAll(where: {$0.itemID == itemID})
         self.eventsHandler(.didRemove(itemID))
+        flushState()
     }
     
     /// Rearrange bento items.
-    public func rearrangeBentoItems() {
-        self.items = self.items.sorted(by: { $0.x < $1.x }).sorted(by: { $0.y < $1.y })
+    public func rearrangeBentoItems(direction: UnitPoint = .top) {
         var delay: Double = 0
-        for i in 0..<self.items.count {
-            let item = self.items[i]
-            if item.y == 0 { continue }
-            let topAdjacents = getTopAdjacentItems(of: item)
-            withAnimation(.bouncy(duration: 0.4, extraBounce: 0.05).delay(delay + Double.random(in: 0..<0.1))) {
-                self.items[i].y = topAdjacents.reduce(0, {
-                    max($0, $1.y+$1.height)
-                })
-            }
-            delay += 0.2
+        switch direction {
+            case .top:
+                self.items = self.items.sorted(by: { $0.x < $1.x }).sorted(by: { $0.y < $1.y })
+                for i in 0..<self.items.count {
+                    let item = self.items[i]
+                    if item.y == 0 { continue }
+                    let topAdjacents = getTopAdjacentItems(of: item)
+                    withAnimation(.bouncy(duration: 0.4, extraBounce: 0.05).delay(delay + Double.random(in: 0..<0.1))) {
+                        self.items[i].y = topAdjacents.reduce(0, {
+                            max($0, $1.y + $1.height + bentoGap)
+                        })
+                    }
+                    delay += 0.2
+                }
+            case .leading:
+                self.items = self.items.sorted(by: { $0.y < $1.y }).sorted(by: { $0.x < $1.x })
+                for i in 0..<self.items.count {
+                    let item = self.items[i]
+                    if item.x == 0 { continue }
+                    let trailingAdjacents = getTrailingAdjacentItems(of: item)
+                    withAnimation(.bouncy(duration: 0.4, extraBounce: 0.05).delay(delay + Double.random(in: 0..<0.1))) {
+                        self.items[i].x = trailingAdjacents.reduce(0, {
+                            max($0, $1.x + $1.width + bentoGap)
+                        })
+                    }
+                    delay += 0.2
+                }
+                
+            default:
+                break
         }
-        
+        flushState()
     }
     
 //    public func partitionBentoItems() {
@@ -322,14 +350,17 @@ public class BentoModel<Item: BentoItem> {
         // get grid items
         for y in stride(
             from: max(0, Int(frame.minY / minItemSize.height) - 1),
-            through: min(Int(containerSize.height / minItemSize.height), Int(frame.maxY / minItemSize.height) + 1),
+            through: min(Int(containerSize.height / minItemSize.height) - 1, Int(frame.maxY / minItemSize.height) + 1),
             by: 1
         ) {
             for x in stride(
                 from: max(0, Int(frame.minX / minItemSize.width) - 1),
-                through: min(Int(containerSize.width / minItemSize.width), Int(frame.maxX / minItemSize.width) + 1),
+                through: min(Int(containerSize.width / minItemSize.width) - 1, Int(frame.maxX / minItemSize.width) + 1),
                 by: 1
             ) {
+                guard y < gridOccupies.count, let yFirst = gridOccupies.first, x < yFirst.count else {
+                    continue
+                }
                 for itemID in gridOccupies[y][x] {
                     if let item = itemsMap[itemID] {
                         hinders.insert(item)
@@ -339,6 +370,187 @@ public class BentoModel<Item: BentoItem> {
         }
 //        print(#function, hinders)
         return Array(hinders)
+    }
+    
+//    func getAllHinder
+    
+    // MARK: - Auxiliary line
+    /// HorizontalAlignemnt - leading <-> trailing
+    var horizontalAlignments: Set<CGFloat> = []
+    var verticalAlignments: Set<CGFloat> = []
+    var activeAlignment: [AlignInfo] = []
+    var alignmentThreshold: CGFloat = 10
+    
+    enum AlignInfo: Identifiable, Equatable {
+        case horizontal(HorizontalAlignInfo)
+        case vertical(VerticalAlignInfo)
+        
+        var id: UUID {
+            switch self {
+                case .horizontal(let horizontalAlignInfo):
+                    horizontalAlignInfo.id
+                case .vertical(let verticalAlignInfo):
+                    verticalAlignInfo.id
+            }
+        }
+        
+        struct HorizontalAlignInfo: Identifiable, Equatable {
+            let id = UUID()
+            var alignment: HorizontalAlignment
+            var value: CGFloat
+        }
+        
+        struct VerticalAlignInfo: Identifiable, Equatable {
+            let id = UUID()
+            var alignment: VerticalAlignment
+            var value: CGFloat
+        }
+    }
+    
+    func flushAlignments() {
+        horizontalAlignments.removeAll()
+        verticalAlignments.removeAll()
+        let checkedItems = items.filter({$0.itemID != draggedItemID})
+        for item in checkedItems {
+            horizontalAlignments.insert(item.frame.minX)
+            horizontalAlignments.insert(item.frame.midX)
+            horizontalAlignments.insert(item.frame.maxX)
+            verticalAlignments.insert(item.frame.minY)
+            verticalAlignments.insert(item.frame.midY)
+            verticalAlignments.insert(item.frame.maxY)
+        }
+    }
+    
+    func getAvailableAlignments(frame: CGRect) -> [AlignInfo] {
+        var results: [AlignInfo] = []
+        for horizontalAlignment in horizontalAlignments {
+            if horizontalAlignment <= frame.minX + alignmentThreshold, horizontalAlignment >= frame.minX - alignmentThreshold {
+                results.append(.horizontal(.init(alignment: .leading, value: horizontalAlignment)))
+            } else if horizontalAlignment <= frame.midX + alignmentThreshold, horizontalAlignment >= frame.midX - alignmentThreshold {
+                    results.append(.horizontal(.init(alignment: .center, value: horizontalAlignment)))
+            } else if horizontalAlignment <= frame.maxX + alignmentThreshold, horizontalAlignment >= frame.maxX - alignmentThreshold {
+                results.append(.horizontal(.init(alignment: .trailing, value: horizontalAlignment)))
+            }
+        }
+        for verticalAlignment in verticalAlignments {
+            if verticalAlignment <= frame.minY + alignmentThreshold,
+               verticalAlignment >= frame.minY - alignmentThreshold {
+                results.append(.vertical(.init(alignment: .top, value: verticalAlignment)))
+            } else if verticalAlignment <= frame.midY + alignmentThreshold,
+                      verticalAlignment >= frame.midY - alignmentThreshold {
+                results.append(.vertical(.init(alignment: .center, value: verticalAlignment)))
+            } else if verticalAlignment <= frame.maxY + alignmentThreshold,
+                      verticalAlignment >= frame.maxY - alignmentThreshold {
+                results.append(.vertical(.init(alignment: .bottom, value: verticalAlignment)))
+            }
+        }
+        print(#function, results)
+        return results
+    }
+    
+    func getMostAlignedFrame(frame: CGRect) -> CGRect? {
+        let alignInfos = getAvailableAlignments(frame: frame)
+        guard !alignInfos.isEmpty else { return nil }
+        let closestOffset: CGSize = alignInfos.reduce(
+            CGSize(
+                width: alignInfos.contains(where: {
+                    if case .horizontal = $0 { return true }
+                    return false
+                }) ? CGFloat.greatestFiniteMagnitude : 0,
+                height: alignInfos.contains(where: {
+                    if case .vertical = $0 { return true }
+                    return false
+                }) ? CGFloat.greatestFiniteMagnitude : 0
+            )
+        ) { partialResult, info in
+            switch info {
+                case .horizontal(let info):
+                    let offset: CGFloat
+                    switch info.alignment {
+                        case .leading:
+                            offset = info.value - frame.minX
+                        case .center:
+                            offset = info.value - frame.midX
+                        case .trailing:
+                            offset = info.value - frame.maxX
+                        default:
+                            return partialResult
+                    }
+                    if abs(offset) < abs(partialResult.width) {
+                        return CGSize(width: offset, height: partialResult.height)
+                    } else {
+                        return partialResult
+                    }
+                    
+                case .vertical(let info):
+                    let offset: CGFloat
+                    switch info.alignment {
+                        case .top:
+                            offset = info.value - frame.minY
+                        case .center:
+                            offset = info.value - frame.midY
+                        case .bottom:
+                            offset = info.value - frame.maxY
+                        default:
+                            return partialResult
+                    }
+                    if abs(offset) < abs(partialResult.height) {
+                        return CGSize(width: partialResult.width, height: offset)
+                    } else {
+                        return partialResult
+                    }
+            }
+        }
+        print(#function, closestOffset)
+        return frame.offsetBy(dx: closestOffset.width, dy: closestOffset.height)
+    }
+    
+    func getAlignedAlignments(frame: CGRect) -> [AlignInfo] {
+        var results = [AlignInfo]()
+        let alignments = getAvailableAlignments(frame: frame)
+        for alignment in alignments {
+            switch alignment {
+                case .horizontal(let horizontalAlignInfo):
+                    switch horizontalAlignInfo.alignment {
+                        case .leading:
+                            if horizontalAlignInfo.value == frame.minX {
+                                results.append(alignment)
+                            }
+                        case .center:
+                            if horizontalAlignInfo.value == frame.midX {
+                                results.append(alignment)
+                            }
+                        case .trailing:
+                            if horizontalAlignInfo.value == frame.maxX {
+                                results.append(alignment)
+                            }
+                        default: break
+                    }
+                case .vertical(let verticalAlignInfo):
+                    switch verticalAlignInfo.alignment {
+                        case .top:
+                            if verticalAlignInfo.value == frame.minY {
+                                results.append(alignment)
+                            }
+                        case .center:
+                            if verticalAlignInfo.value == frame.midY {
+                                results.append(alignment)
+                            }
+                        case .bottom:
+                            if verticalAlignInfo.value == frame.maxY {
+                                results.append(alignment)
+                            }
+                        default: break
+                    }
+            }
+        }
+        return results
+    }
+    
+    /// This should be called every time item has been dragged/resized (before)
+    func flushState() {
+        flushGridOccupyState()
+        flushAlignments()
     }
 }
 
@@ -379,6 +591,54 @@ func getHinderItems<Item: BentoItem>(of item: Item, from items: [Item], directio
     print(#function, "direction: \(direction), hinders: \(hinders)")
     
     return hinders
+}
+
+
+@Observable
+public class BentoUndoManager<Item: BentoItem> {
+    var checkpoints: [[Item]] = []
+    @ObservationIgnored
+    private var readyToMakeNewCheckpoints = true
+    @ObservationIgnored
+    private var newCheckpointPublisher = PassthroughSubject<Void, Never>()
+    @ObservationIgnored
+    private var newCheckpointCancellable: AnyCancellable?
+    
+    var canUndo: Bool { currentIndex > 0 }
+    var canRedo: Bool { currentIndex < checkpoints.endIndex - 1 }
+    
+    init() {
+        newCheckpointCancellable = newCheckpointPublisher.debounce(for: 0.5, scheduler: RunLoop.main).sink {
+            self.readyToMakeNewCheckpoints = true
+        }
+    }
+    
+    private var currentIndex = 0
+    public var currentItems: [Item] {
+        get { checkpoints[currentIndex] }
+        set {
+            if readyToMakeNewCheckpoints {
+                if !checkpoints.isEmpty {
+                    checkpoints.removeLast(checkpoints.endIndex - 1 - currentIndex)
+                }
+                checkpoints.append(newValue)
+                currentIndex = checkpoints.endIndex - 1
+                self.readyToMakeNewCheckpoints = false
+            } else {
+                checkpoints[currentIndex] = newValue
+            }
+            newCheckpointPublisher.send()
+        }
+    }
+    
+    public func undo() {
+        currentIndex = max(0, currentIndex - 1)
+    }
+    public func redo() {
+        currentIndex = min(checkpoints.endIndex - 1, currentIndex + 1)
+    }
+    
+    
 }
 
 

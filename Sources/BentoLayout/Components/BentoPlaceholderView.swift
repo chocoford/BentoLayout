@@ -28,8 +28,8 @@ struct BentoPlaceholderView<Item: BentoItem>: View {
                 HStack(spacing: 0) {
                     ForEach(Array(e.enumerated()), id: \.offset) { j, _ in
                         Rectangle()
-                            .fill(.red.opacity(0.2))
-                            .stroke(.red.opacity(0.5))
+                            .fill(.red.opacity(0.05))
+                            .stroke(.red.opacity(0.1))
                             .frame(
                                 width: bentoModel.minItemSize.width,
                                 height: bentoModel.minItemSize.height

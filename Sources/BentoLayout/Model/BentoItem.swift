@@ -8,7 +8,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-public struct BentoItemSize: Hashable, Codable, CustomStringConvertible {
+public struct BentoItemSize: Hashable, Codable, Sendable, CustomStringConvertible {
     var width: CGFloat
     var height: CGFloat
 //    var width: Int
@@ -21,13 +21,13 @@ public struct BentoItemSize: Hashable, Codable, CustomStringConvertible {
     }
 }
 
-public enum BentoItemRestriction: Codable, Hashable {
+public enum BentoItemRestriction: Codable, Hashable, Sendable {
     case ratio(Set<BentoItemSize>)
     case minSize(BentoItemSize)
     case maxSize(BentoItemSize)
 }
 
-public protocol BentoItem: Identifiable, Hashable, Transferable {
+public protocol BentoItem: Identifiable, Hashable, Transferable, Sendable {
     var itemID: UUID { get set }
     var frame: CGRect { get set }
     var borderRadius: CGFloat { get }
@@ -64,17 +64,20 @@ extension BentoItem {
         })
     }
     
-    public func checkIsOverlay<I: BentoItem>(with item: I) -> Bool {
-        if self.x >= item.x + item.width {
+    public func checkIsOverlay<I: BentoItem>(
+        with item: I,
+        safeAreaPadding: CGFloat = 0
+    ) -> Bool {
+        if self.x >= item.x + item.width + safeAreaPadding {
             return false
         }
-        if self.x + self.width <= item.x {
+        if self.x + self.width + safeAreaPadding <= item.x {
             return false
         }
-        if self.y >= item.y + item.height {
+        if self.y >= item.y + item.height + safeAreaPadding {
             return false
         }
-        if self.y + self.height <= item.y {
+        if self.y + self.height + safeAreaPadding <= item.y {
             return false
         }
         return true
@@ -88,18 +91,16 @@ extension BentoItem {
         return checkIsOverlay(with: item)
     }
     
-    @available(*, unavailable, message: "Not ready yet")
-    public var maximumSize: BentoItemSize? {
+    public var maximumSize: CGSize {
 //        for restriction in self.restrictions {
 //            if case .maxSize(let maxSize) = restriction {
 //                return maxSize
 //            }
 //        }
-        return nil
+        return CGSize(width: 20, height: 20)
     }
     
-    @available(*, unavailable, message: "Not ready yet")
-    public var minimumSize: BentoItemSize? {
+    public var minimumSize: CGSize {
 //        for restriction in self.restrictions {
 //            if case .minSize(let minSize) = restriction {
 //                return minSize
@@ -131,7 +132,7 @@ extension BentoItem {
 //            }
 //        }
         
-        return nil
+        return CGSize(width: 20, height: 20)
     }
 }
 
@@ -140,7 +141,7 @@ public struct DefaultBentoItem: BentoItem {
     public var id: UUID { itemID }
     public var itemID = UUID()
     public var frame: CGRect
-    public var borderRadius: CGFloat = 20
+    public var borderRadius: CGFloat = 4
     
     public var restrictions: [BentoItemRestriction] = []
     public var showResizeHandler: Bool { true }
