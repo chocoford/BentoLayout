@@ -381,29 +381,55 @@ public class BentoModel<Item: BentoItem> {
     var activeAlignment: [AlignInfo] = []
     var alignmentThreshold: CGFloat = 10
     
-    enum AlignInfo: Identifiable, Equatable {
+    enum AlignInfo: Hashable {
         case horizontal(HorizontalAlignInfo)
         case vertical(VerticalAlignInfo)
         
-        var id: UUID {
-            switch self {
-                case .horizontal(let horizontalAlignInfo):
-                    horizontalAlignInfo.id
-                case .vertical(let verticalAlignInfo):
-                    verticalAlignInfo.id
+//        var id: UUID {
+//            switch self {
+//                case .horizontal(let horizontalAlignInfo):
+//                    horizontalAlignInfo.id
+//                case .vertical(let verticalAlignInfo):
+//                    verticalAlignInfo.id
+//            }
+//        }
+        
+        struct HorizontalAlignInfo: Hashable {
+            var alignment: HorizontalAlignment
+            var value: CGFloat
+            func hash(into hasher: inout Hasher) {
+                hasher.combine("HorizontalAlignInfo")
+                switch alignment {
+                    case .trailing:
+                        hasher.combine(0)
+                    case .center:
+                        hasher.combine(1)
+                    case .trailing:
+                        hasher.combine(2)
+                    default:
+                        break
+                }
+                hasher.combine(value)
             }
         }
         
-        struct HorizontalAlignInfo: Identifiable, Equatable {
-            let id = UUID()
-            var alignment: HorizontalAlignment
-            var value: CGFloat
-        }
-        
-        struct VerticalAlignInfo: Identifiable, Equatable {
-            let id = UUID()
+        struct VerticalAlignInfo: Hashable {
             var alignment: VerticalAlignment
             var value: CGFloat
+            func hash(into hasher: inout Hasher) {
+                hasher.combine("VerticalAlignInfo")
+                switch alignment {
+                    case .top:
+                        hasher.combine(0)
+                    case .center:
+                        hasher.combine(1)
+                    case .bottom:
+                        hasher.combine(2)
+                    default:
+                        break
+                }
+                hasher.combine(value)
+            }
         }
     }
     
