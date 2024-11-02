@@ -83,7 +83,11 @@ public class BentoModel<Item: BentoItem> {
         get { items.first(where: {$0.itemID == draggedItemID}) }
     }
     public var isDragging: Bool { draggedItemID != nil }
-    public var isResizing = false
+    public var resizedItemID: UUID?
+    public var resizedItem: Item? {
+        get { items.first(where: {$0.itemID == resizedItemID}) }
+    }
+    public var isResizing: Bool { resizedItemID != nil }
     
     private func findConflictItems(with item: Item) -> [Item] {
         self.items.filter({$0.itemID != item.itemID}).filter({$0.checkIsOverlay(with: item)})
@@ -378,23 +382,14 @@ public class BentoModel<Item: BentoItem> {
     /// HorizontalAlignemnt - leading <-> trailing
     var horizontalAlignments: Set<CGFloat> = []
     var verticalAlignments: Set<CGFloat> = []
-    var activeAlignment: [AlignInfo] = []
+    var activeAlignments: [AlignInfo] = []
     var alignmentThreshold: CGFloat = 10
     
-    enum AlignInfo: Hashable {
+    enum AlignInfo: Hashable, CustomStringConvertible {
         case horizontal(HorizontalAlignInfo)
         case vertical(VerticalAlignInfo)
         
-//        var id: UUID {
-//            switch self {
-//                case .horizontal(let horizontalAlignInfo):
-//                    horizontalAlignInfo.id
-//                case .vertical(let verticalAlignInfo):
-//                    verticalAlignInfo.id
-//            }
-//        }
-        
-        struct HorizontalAlignInfo: Hashable {
+        struct HorizontalAlignInfo: Hashable, CustomStringConvertible {
             var alignment: HorizontalAlignment
             var value: CGFloat
             func hash(into hasher: inout Hasher) {
@@ -411,9 +406,13 @@ public class BentoModel<Item: BentoItem> {
                 }
                 hasher.combine(value)
             }
+            
+            var description: String {
+                "[\(alignment): \(value)]"
+            }
         }
         
-        struct VerticalAlignInfo: Hashable {
+        struct VerticalAlignInfo: Hashable, CustomStringConvertible {
             var alignment: VerticalAlignment
             var value: CGFloat
             func hash(into hasher: inout Hasher) {
@@ -430,13 +429,26 @@ public class BentoModel<Item: BentoItem> {
                 }
                 hasher.combine(value)
             }
+            
+            var description: String {
+                "[\(alignment): \(value)]"
+            }
+        }
+        
+        var description: String {
+            switch self {
+                case .horizontal(let horizontalAlignInfo):
+                    "horizontal: \(horizontalAlignInfo.description)"
+                case .vertical(let verticalAlignInfo):
+                    "vertical: \(verticalAlignInfo.description)"
+            }
         }
     }
     
     func flushAlignments() {
         horizontalAlignments.removeAll()
         verticalAlignments.removeAll()
-        let checkedItems = items.filter({$0.itemID != draggedItemID})
+        let checkedItems = items.filter({$0.itemID != draggedItemID && $0.itemID != resizedItemID})
         for item in checkedItems {
             horizontalAlignments.insert(item.frame.minX)
             horizontalAlignments.insert(item.frame.midX)
@@ -470,7 +482,7 @@ public class BentoModel<Item: BentoItem> {
                 results.append(.vertical(.init(alignment: .bottom, value: verticalAlignment)))
             }
         }
-        print(#function, results)
+        print(#function, results.count)
         return results
     }
     
@@ -527,8 +539,9 @@ public class BentoModel<Item: BentoItem> {
                     }
             }
         }
-        print(#function, closestOffset)
-        return frame.offsetBy(dx: closestOffset.width, dy: closestOffset.height)
+        let mostAlignedFrame = frame.offsetBy(dx: closestOffset.width, dy: closestOffset.height)
+        print(#function, closestOffset, mostAlignedFrame)
+        return mostAlignedFrame
     }
     
     func getAlignedAlignments(frame: CGRect) -> [AlignInfo] {
@@ -570,6 +583,7 @@ public class BentoModel<Item: BentoItem> {
                     }
             }
         }
+        print("active alignments: \(results)")
         return results
     }
     

@@ -52,7 +52,7 @@ struct BentoItemView<Item: BentoItem, ItemContent: View>: View {
 
                 if item.showResizeHandler,
                    !bentoModel.isDragging,
-                   isHovered || itemBeforeResized?.itemID == item.itemID {
+                   isHovered || bentoModel.resizedItemID == item.itemID {
                     Path { path in
                         path.move(to: CGPoint(x: maxRadius, y: 0))
                         if item.borderRadius < maxRadius, item.borderRadius > 0 {
@@ -76,10 +76,8 @@ struct BentoItemView<Item: BentoItem, ItemContent: View>: View {
                         DragGesture(coordinateSpace: .global)
                             .onChanged { value in
                                 resizeBentoItem(item, dragData: value)
-                                bentoModel.flushGridOccupyState()
                             }.onEnded { _ in
-                                itemBeforeResized = nil
-                                bentoModel.flushGridOccupyState()
+                                onResizeEnd()
                             },
                         including: .all
                     )
@@ -102,9 +100,6 @@ struct BentoItemView<Item: BentoItem, ItemContent: View>: View {
             .transition(.scale.animation(.bouncy(duration: 0.2, extraBounce: 0.2)))
             .animation(.default, value: itemBeforeResized?.itemID == item.itemID)
             .animation(.default, value: draggedItem == item)
-            .onChange(of: isResizing) { oldValue, newValue in
-                bentoModel.isResizing = newValue
-            }
     }
     
     // MARK: - Drag(Move)
@@ -145,13 +140,14 @@ struct BentoItemView<Item: BentoItem, ItemContent: View>: View {
         // 注意一种场景：进入了左边一点点的对齐判定区域，但无法对齐到那个位置
         let alignedFrame = bentoModel.getMostAlignedFrame(frame: newFrame)
         
-        bentoModel.activeAlignment = []
-        if let alignedFrame, tryPlaceItem(to: alignedFrame) {
-            let activeAlignments = bentoModel.getAlignedAlignments(frame: alignedFrame)
-            bentoModel.activeAlignment = activeAlignments
-            // send tapic feedback
-            print("align item to \(alignedFrame)")
-            return
+        bentoModel.activeAlignments = []
+        if let alignedFrame {
+            if tryPlaceItem(to: alignedFrame) {
+                bentoModel.activeAlignments = bentoModel.getAlignedAlignments(frame: alignedFrame)
+                // send tapic feedback
+                print("align item to \(alignedFrame)")
+                return
+            }
         }
         if tryPlaceItem(to: newFrame) { return }
         
@@ -170,10 +166,35 @@ struct BentoItemView<Item: BentoItem, ItemContent: View>: View {
         let maxY = getHinderItems(of: item, from: hinders, direction: .bottom).reduce(bentoModel.containerSize.height + 100) {
             min($0, $1.y - bentoGap)
         }
-        newFrame.origin = CGPoint(
-            x: min(max(newFrame.origin.x, minX), maxX - newFrame.size.width),
-            y: min(max(newFrame.origin.y, minY), maxY - newFrame.size.height)
-        )
+        
+        let safeX = min(max(newFrame.origin.x, minX), maxX - newFrame.size.width)
+        let safeY = min(max(newFrame.origin.y, minY), maxY - newFrame.size.height)
+        
+        
+        if let alignedFrame {
+            if safeX == newFrame.origin.x {
+                let safeAlignedFrame = CGRect(
+                    origin: CGPoint(x: alignedFrame.origin.x, y: safeY),
+                    size: newFrame.size
+                )
+                if tryPlaceItem(to: safeAlignedFrame) {
+                    bentoModel.activeAlignments = bentoModel.getAlignedAlignments(frame: safeAlignedFrame)
+                    return
+                }
+            }
+//            
+            if safeY == newFrame.origin.y { // 说明y方向上没有被阻挡
+                let safeAlignedFrame = CGRect(
+                    origin: CGPoint(x: safeX, y: alignedFrame.origin.y),
+                    size: newFrame.size
+                )
+                if tryPlaceItem(to: safeAlignedFrame) {
+                    bentoModel.activeAlignments = bentoModel.getAlignedAlignments(frame: safeAlignedFrame)
+                    return
+                }
+            }
+        }
+        newFrame.origin = CGPoint(x: safeX, y: safeY)
         item.frame = newFrame
     }
     
@@ -185,15 +206,14 @@ struct BentoItemView<Item: BentoItem, ItemContent: View>: View {
     }
     
     // MARK: - Resize
-    var isResizing: Bool { itemBeforeResized != nil }
+    var isResizing: Bool { bentoModel.isResizing }
     @State private var itemBeforeResized: Item?
-//    @State private var initialHindersStateBeforeDrag: [Item]?
     @State private var initialStateBeforeDrag: [Item]?
     private func resizeBentoItem(_ item: Item, dragData: DragGesture.Value) {
         guard let index = items.firstIndex(where: {$0.itemID == item.itemID}) else { return }
-        if itemBeforeResized == nil {
+        if !isResizing {
+            bentoModel.resizedItemID = item.itemID
             itemBeforeResized = item.duplicated(withSameID: true)
-//            initialHindersStateBeforeDrag = bentoModel.getPotentialHinderItems(of: item).map{$0.duplicated(withSameID: true)}
             initialStateBeforeDrag = items.map{$0.duplicated(withSameID: true)}
         }
         guard let itemBeforeResized else { return }
@@ -217,12 +237,23 @@ struct BentoItemView<Item: BentoItem, ItemContent: View>: View {
         let newHeight = max(
             item.minimumSize.height,
             itemBeforeResized.frame.height + offsetY
-//            min(itemBeforeResized.frame.height + offsetY, maxY - itemBeforeResized.frame.minY, )
         )
 
         guard newWidth > 0, newHeight > 0 else {
             print("Invalid size, return.")
             return
+        }
+        
+        var newFrame = CGRect(
+            origin: item.frame.origin,
+            size: CGSize(width: newWidth, height: newHeight)
+        )
+        
+        // align
+        if let mostAlignedFrame = bentoModel.getMostAlignedFrame(frame: newFrame) {
+            withAnimation {
+                newFrame.size = mostAlignedFrame.size
+            }
         }
         
         func resizeTrailingHinders(_ trailingHinders: [Item], accWidth: CGFloat) {
@@ -339,8 +370,16 @@ struct BentoItemView<Item: BentoItem, ItemContent: View>: View {
         
         print(#function, "newWidth: \(newWidth), newHeight: \(newHeight)")
         
-        bentoModel.items[index].width = newWidth
-        bentoModel.items[index].height = newHeight
+        bentoModel.items[index].frame = newFrame
+        
+        bentoModel.flushState()
+    }
+    
+    private func onResizeEnd() {
+        itemBeforeResized = nil
+        bentoModel.resizedItemID = nil
+        bentoModel.flushGridOccupyState()
+
     }
     
     private func getBentoSize(_ item: Item, withBounceOnEdge: Bool = false, transformer: (CGSize) -> CGSize = { $0 }) -> CGSize {

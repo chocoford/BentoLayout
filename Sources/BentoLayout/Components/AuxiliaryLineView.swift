@@ -14,7 +14,7 @@ struct AuxiliaryLineView<Item: BentoItem>: View {
     
     var body: some View {
         if bentoModel.isDragging || bentoModel.isResizing {
-            ForEach(bentoModel.activeAlignment, id: \.self) { alignment in
+            ForEach(bentoModel.activeAlignments, id: \.self) { alignment in
                 if case .vertical(let info) = alignment {
                     Rectangle()
                         .fill(.green)
@@ -22,7 +22,7 @@ struct AuxiliaryLineView<Item: BentoItem>: View {
                         .alignmentGuide(.top) { d in
                             d[.top] - info.value
                         }
-                } else if case .vertical(let info) = alignment {
+                } else if case .horizontal(let info) = alignment {
                     Rectangle()
                         .fill(.green)
                         .frame(width: 1)
