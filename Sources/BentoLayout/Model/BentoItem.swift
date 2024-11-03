@@ -83,6 +83,12 @@ extension BentoItem {
         return true
     }
     
+    public func checkIsOverlay(frame: CGRect) -> Bool {
+        var item = self.duplicated(withSameID: false)
+        item.frame = frame
+        return checkIsOverlay(with: item)
+    }
+    
     public func checkIsOverlay(position: CGPoint) -> Bool {
 //    public func checkIsOverlay(position: (x: Int, y: Int)) -> Bool {
         var item = self.duplicated(withSameID: false)

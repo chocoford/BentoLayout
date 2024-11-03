@@ -250,9 +250,16 @@ struct BentoItemView<Item: BentoItem, ItemContent: View>: View {
         )
         
         // align
-        if let mostAlignedFrame = bentoModel.getMostAlignedFrame(frame: newFrame) {
-            withAnimation {
-                newFrame.size = mostAlignedFrame.size
+        if let mostAlignedFrame = bentoModel.getMostAlignedFrame(
+            frame: newFrame,
+            direction: .bottomTrailing
+        ) {
+            var futureItem = item.duplicated(withSameID: true)
+            futureItem.frame = mostAlignedFrame
+            if bentoModel.items.allSatisfy({
+                $0 == item || !$0.checkIsOverlay(with: futureItem, safeAreaPadding: bentoModel.bentoGap)
+            }) {
+                newFrame = mostAlignedFrame
             }
         }
         
@@ -365,8 +372,8 @@ struct BentoItemView<Item: BentoItem, ItemContent: View>: View {
             }
         }
         
-        resizeTrailingHinders(trailingHinders, accWidth: item.x + newWidth + bentoGap)
-        resizeBottomHinders(bottomHinders, accHeight: item.y + newHeight + bentoGap)
+        resizeTrailingHinders(trailingHinders, accWidth: item.x + newFrame.width + bentoGap)
+        resizeBottomHinders(bottomHinders, accHeight: item.y + newFrame.height + bentoGap)
         
         print(#function, "newWidth: \(newWidth), newHeight: \(newHeight)")
         

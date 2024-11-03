@@ -482,23 +482,20 @@ public class BentoModel<Item: BentoItem> {
                 results.append(.vertical(.init(alignment: .bottom, value: verticalAlignment)))
             }
         }
-        print(#function, results.count)
+        print(#function, results)
         return results
     }
     
-    func getMostAlignedFrame(frame: CGRect) -> CGRect? {
+    func getMostAlignedFrame(
+        frame: CGRect,
+        direction: UnitPoint? = nil
+    ) -> CGRect? {
         let alignInfos = getAvailableAlignments(frame: frame)
         guard !alignInfos.isEmpty else { return nil }
-        let closestOffset: CGSize = alignInfos.reduce(
+        var closestOffset: CGSize = alignInfos.reduce(
             CGSize(
-                width: alignInfos.contains(where: {
-                    if case .horizontal = $0 { return true }
-                    return false
-                }) ? CGFloat.greatestFiniteMagnitude : 0,
-                height: alignInfos.contains(where: {
-                    if case .vertical = $0 { return true }
-                    return false
-                }) ? CGFloat.greatestFiniteMagnitude : 0
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
             )
         ) { partialResult, info in
             switch info {
@@ -506,10 +503,17 @@ public class BentoModel<Item: BentoItem> {
                     let offset: CGFloat
                     switch info.alignment {
                         case .leading:
+                            guard direction == nil || direction?.x == 0 else {
+                                return partialResult
+                            }
                             offset = info.value - frame.minX
                         case .center:
+                            guard direction == nil else { return partialResult }
                             offset = info.value - frame.midX
                         case .trailing:
+                            guard direction == nil || direction?.x == 1 else {
+                                return partialResult
+                            }
                             offset = info.value - frame.maxX
                         default:
                             return partialResult
@@ -524,10 +528,17 @@ public class BentoModel<Item: BentoItem> {
                     let offset: CGFloat
                     switch info.alignment {
                         case .top:
+                            guard direction == nil || direction?.y == 0 else {
+                                return partialResult
+                            }
                             offset = info.value - frame.minY
                         case .center:
+                            guard direction == nil else { return partialResult }
                             offset = info.value - frame.midY
                         case .bottom:
+                            guard direction == nil || direction?.y == 1 else {
+                                return partialResult
+                            }
                             offset = info.value - frame.maxY
                         default:
                             return partialResult
@@ -539,8 +550,32 @@ public class BentoModel<Item: BentoItem> {
                     }
             }
         }
-        let mostAlignedFrame = frame.offsetBy(dx: closestOffset.width, dy: closestOffset.height)
-        print(#function, closestOffset, mostAlignedFrame)
+        if closestOffset.width == .greatestFiniteMagnitude {
+            closestOffset.width = 0
+        }
+        if closestOffset.height == .greatestFiniteMagnitude {
+            closestOffset.height = 0
+        }
+        var mostAlignedFrame: CGRect = frame
+        
+        if let direction {
+            if direction.x == 0 {
+                mostAlignedFrame.origin.x -= closestOffset.width
+                mostAlignedFrame.size.width += closestOffset.width
+            } else if direction.x == 1 {
+                mostAlignedFrame.size.width += closestOffset.width
+            }
+            if direction.y == 0 {
+                mostAlignedFrame.origin.y -= closestOffset.height
+                mostAlignedFrame.size.height += closestOffset.height
+            } else if direction.y == 1 {
+                mostAlignedFrame.size.height += closestOffset.height
+            }
+        } else {
+            mostAlignedFrame = frame.offsetBy(dx: closestOffset.width, dy: closestOffset.height)
+        }
+        
+        print(#function, frame, closestOffset, mostAlignedFrame)
         return mostAlignedFrame
     }
     
