@@ -24,19 +24,19 @@ struct BentoPlaceholderView<Item: BentoItem>: View {
         //            }
         //        }
         VStack(spacing: 0) {
-            ForEach(Array(bentoModel.gridOccupies.enumerated()), id: \.offset) { i, e in
-                HStack(spacing: 0) {
-                    ForEach(Array(e.enumerated()), id: \.offset) { j, _ in
-                        Rectangle()
-                            .fill(.red.opacity(0.05))
-                            .stroke(.red.opacity(0.1))
-                            .frame(
-                                width: bentoModel.minItemSize.width,
-                                height: bentoModel.minItemSize.height
-                            )
-                    }
-                }
-            }
+//            ForEach(Array(bentoModel.gridOccupies.enumerated()), id: \.offset) { i, e in
+//                HStack(spacing: 0) {
+//                    ForEach(Array(e.enumerated()), id: \.offset) { j, _ in
+//                        Rectangle()
+//                            .fill(.red.opacity(0.05))
+//                            .stroke(.red.opacity(0.1))
+//                            .frame(
+//                                width: bentoModel.minItemSize.width,
+//                                height: bentoModel.minItemSize.height
+//                            )
+//                    }
+//                }
+//            }
         }
         .animation(.default, value: bentoModel.isDragging || bentoModel.isResizing)
         .frame(width: bentoModel.containerSize.width, height: bentoModel.containerSize.height, alignment: .topLeading)

@@ -30,11 +30,22 @@ struct ExampleBentoItemView: View {
                 print("OnTap - \(item.id)")
             }
             .contextMenu {
+                Button {
+                    withAnimation(.smooth) {
+                        bentoModel.stretchItem(id: item.itemID)
+                    }
+                } label: {
+                    Label("Stretch", systemImage: "square.arrowtriangle.4.outward")
+                }
+                
+                
                 Button(role: .destructive) {
                     bentoModel.removeBentoItem(item)
                 } label: {
                     Label("Remove", systemSymbol: .trash)
                 }
+                
+                
             }
     }
 }

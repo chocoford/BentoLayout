@@ -8,6 +8,15 @@
 import SwiftUI
 import Combine
 
+
+struct BentoItemAnchorKey: PreferenceKey {
+    static let defaultValue: [UUID : Anchor<CGRect>] = [:]
+    
+    static func reduce(value: inout [UUID : Anchor<CGRect>], nextValue: () -> [UUID : Anchor<CGRect>]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
 struct BentoItemsView<Item: BentoItem, ItemContent: View>: View {
     @Environment(BentoModel<Item>.self) var bentoModel
     
@@ -28,6 +37,12 @@ struct BentoItemsView<Item: BentoItem, ItemContent: View>: View {
                 }),
                 content: itemContent
             )
+            .background {
+                Color.clear
+                    .anchorPreference(key: BentoItemAnchorKey.self, value: .bounds) {
+                        [item.itemID : $0]
+                    }
+            }
         }
     }
 }

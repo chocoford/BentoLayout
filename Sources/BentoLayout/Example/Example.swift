@@ -57,6 +57,15 @@ internal struct ExampleBentoItem: BentoItem {
             restrictions: self.restrictions
         )
     }
+    
+    mutating public func applyChange(from item: ExampleBentoItem) {
+        self.itemID = item.itemID
+        self.frame = item.frame
+        self.restrictions = item.restrictions
+        self.borderRadius = item.borderRadius
+        self.color = item.color
+        self.isGradient = item.isGradient
+    }
 }
 
 /// Example Bento View
@@ -66,17 +75,83 @@ internal struct BentoExampleView: View {
     )
     
     @State private var inEdit = false
+    @State private var inSwapMode = false
+    @State private var swapItems: [ExampleBentoItem] = []
     
     var body: some View {
         ScrollView {
             VBento(model: bentoModel) { item in
                 ExampleBentoItemView(item: item)
+                    .gesture(
+                        TapGesture().onEnded {
+                            swapItems.append(item)
+                            
+                            if swapItems.count >= 2 {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                                    inSwapMode = false
+                                    withAnimation {
+                                        bentoModel.swapItemFrame(
+                                            aID: swapItems[0].itemID,
+                                            bID: swapItems[1].itemID
+                                        )
+                                    }
+                                    swapItems.removeAll()
+                                }
+                            }
+                        },
+                        including: inSwapMode ? .gesture : .subviews
+                    )
+            } overlayAccessoryView: { proxy in
+                if inSwapMode {
+                    ZStack(alignment: .topLeading) {
+                        Color.black.opacity(0.7)
+                            .overlay {
+                                Text("Select two item to swap.")
+                                    .font(.title)
+                                    .foregroundStyle(.white)
+                            }
+                        
+                        ForEach(swapItems) { item in
+                            ZStack {
+                                RoundedRectangle(cornerRadius: item.borderRadius)
+                                    .fill(Color.accentColor.opacity(0.5))
+                                RoundedRectangle(cornerRadius: item.borderRadius)
+                                    .stroke(Color.accentColor, lineWidth: 4)
+                            }
+                            .frame(
+                                width: proxy.itemsBounds[item.itemID]?.size.width,
+                                height: proxy.itemsBounds[item.itemID]?.size.height
+                            )
+                            .offset(
+                                x: proxy.itemsBounds[item.itemID]?.origin.x ?? .zero,
+                                y: proxy.itemsBounds[item.itemID]?.origin.y ?? .zero
+                            )
+                        }
+                    }
+                    .allowsHitTesting(false)
+                }
             }
             .padding()
             .containerRelativeFrame(.horizontal)
+            .animation(.default, value: inSwapMode)
         }
         .overlay(alignment: .bottom) {
-            HStack(spacing: 4) {
+            toolbar()
+                .frame(height: 24)
+                .padding()
+                .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 20))
+                .compositingGroup()
+                .shadow(radius: 3, y: 2)
+                .padding()
+                .animation(.default, value: inSwapMode)
+        }
+    }
+    
+    @MainActor @ViewBuilder
+    private func toolbar() -> some View {
+        HStack(spacing: 4) {
+            
+            if !inSwapMode {
                 
                 Button {
                     withAnimation {
@@ -99,7 +174,7 @@ internal struct BentoExampleView: View {
                 .disabled(!bentoModel.undoManager.canRedo)
                 
                 Divider()
-
+                
                 Button {
                     bentoModel.rearrangeBentoItems(direction: .leading)
                 } label: {
@@ -130,8 +205,19 @@ internal struct BentoExampleView: View {
                             .rotationEffect(.degrees(-90))
                     }
                 }
-                
-                Divider()
+            }
+            
+            Button {
+                inSwapMode.toggle()
+            } label: {
+                Label("Swap", systemImage: "rectangle.2.swap")
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(inSwapMode ? Color.accentColor : .primary)
+            }
+            
+            Divider()
+            
+            if !inSwapMode {
                 
                 Button {
                     bentoModel.addBentoItem(
@@ -141,13 +227,23 @@ internal struct BentoExampleView: View {
                             width: 120,
                             height: 120,
                             color: [Color.blue, .gray, .teal, .orange, .pink, .mint, .red, .indigo].randomElement()!
-//                            content: .text(BentomanTextItem(content: ""))
                         )
                     )
                 } label: {
                     Image(systemName: "textformat")
                 }
+            } else {
+                Text("Select two item to swap.")
                 
+                Button {
+                    inSwapMode = false
+                    swapItems.removeAll()
+                } label: {
+                    Label("Cancel", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
+                }
+            }
+            
 //                FileImporterButton(types: [.image], allowMultiple: false) { urls in
 //                    guard let url = urls.first else { return }
 //                    if url.startAccessingSecurityScopedResource() {
@@ -164,7 +260,7 @@ internal struct BentoExampleView: View {
 //                                medias: [mediaID : imageData]
 //                            )
 //                        )
-//                        
+//
 //                        url.stopAccessingSecurityScopedResource()
 //                    } else {
 //                        print("startAccessingSecurityScopedResource failed.")
@@ -172,49 +268,8 @@ internal struct BentoExampleView: View {
 //                } label: {
 //                    Image(systemName: "photo")
 //                }
-            }
-            .buttonStyle(.text(square: true))
-            .frame(height: 24)
-            .padding()
-            .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 20))
-            .compositingGroup()
-            .shadow(radius: 3, y: 2)
-            .padding()
-//            HStack {
-//                Button {
-//                    bentoModel.rearrangeBentoItems()
-//                } label: {
-//                    Text("Rearrange")
-//                }
-//                
-//                Button {
-//                    inEdit.toggle()
-//                } label: {
-//                    Text(inEdit ? "Done" : "Edit")
-//                }
-//                
-//                if !inEdit {
-//                    Button {
-//                        let width = Double(Int.random(in: 1...5) * 40)
-//                        let height = Double(Int.random(in: 1...5) * 40)
-//                        let bentoItem = ExampleBentoItem(
-//                            x: 0,
-//                            y: 0,
-//                            width: width,
-//                            height: height
-//                        )
-//                        bentoModel.addBentoItem(bentoItem)
-//                    } label: {
-//                        Text("Add item")
-//                    }
-//                }
-//            }
-//            .padding()
-//            .background {
-//                Capsule().fill(.regularMaterial)
-//            }
-//            .padding(.bottom)
         }
+        .buttonStyle(.text(square: true))
     }
 }
 

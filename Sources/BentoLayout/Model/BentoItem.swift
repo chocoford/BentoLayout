@@ -11,6 +11,11 @@ import UniformTypeIdentifiers
 public struct BentoItemSize: Hashable, Codable, Sendable, CustomStringConvertible {
     var width: CGFloat
     var height: CGFloat
+    
+    public init(width: CGFloat, height: CGFloat) {
+        self.width = width
+        self.height = height
+    }
 //    var width: Int
 //    var height: Int
     
@@ -36,6 +41,7 @@ public protocol BentoItem: Identifiable, Hashable, Transferable, Sendable {
     
     var showResizeHandler: Bool { get }
     
+    mutating func applyChange(from item: Self)
     func duplicated(withSameID: Bool) -> Self
 }
 
@@ -97,21 +103,21 @@ extension BentoItem {
         return checkIsOverlay(with: item)
     }
     
-    public var maximumSize: CGSize {
-//        for restriction in self.restrictions {
-//            if case .maxSize(let maxSize) = restriction {
-//                return maxSize
-//            }
-//        }
-        return CGSize(width: 20, height: 20)
+    public var maximumSize: CGSize? {
+        for restriction in self.restrictions {
+            if case .maxSize(let maxSize) = restriction {
+                return CGSize(width: maxSize.width, height: maxSize.height)
+            }
+        }
+        return nil
     }
     
     public var minimumSize: CGSize {
-//        for restriction in self.restrictions {
-//            if case .minSize(let minSize) = restriction {
-//                return minSize
-//            }
-//        }
+        for restriction in self.restrictions {
+            if case .minSize(let minSize) = restriction {
+                return CGSize(width: minSize.width, height: minSize.height)
+            }
+        }
 
 //        for restriction in self.restrictions {
 //            if case .ratio(let ratios) = restriction {
@@ -194,6 +200,15 @@ public struct DefaultBentoItem: BentoItem {
             height: self.height,
             restrictions: self.restrictions
         )
+    }
+    
+    mutating public func applyChange(from item: DefaultBentoItem) {
+        self.itemID = item.itemID
+        self.frame = item.frame
+        self.restrictions = item.restrictions
+        self.borderRadius = item.borderRadius
+        self.color = item.color
+        self.isGradient = item.isGradient
     }
 }
 

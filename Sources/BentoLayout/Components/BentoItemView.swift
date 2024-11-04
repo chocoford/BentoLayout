@@ -45,12 +45,14 @@ struct BentoItemView<Item: BentoItem, ItemContent: View>: View {
                     }
                     .onEnded { val in
                         onMoveEnd(val)
-                    }
+                    },
+                isEnabled: bentoModel.canMove
             ) // Drag handler
             .overlay(alignment: .bottomTrailing) {
                 let maxRadius: CGFloat = 20
 
                 if item.showResizeHandler,
+                   bentoModel.canResize,
                    !bentoModel.isDragging,
                    isHovered || bentoModel.resizedItemID == item.itemID {
                     Path { path in
@@ -374,6 +376,17 @@ struct BentoItemView<Item: BentoItem, ItemContent: View>: View {
         
         resizeTrailingHinders(trailingHinders, accWidth: item.x + newFrame.width + bentoGap)
         resizeBottomHinders(bottomHinders, accHeight: item.y + newFrame.height + bentoGap)
+        
+        
+        // min size check
+        newFrame.size.width = max(
+            item.minimumSize.width,
+            min(newFrame.size.width, bentoModel.containerSize.width - newFrame.origin.x)
+        )
+        newFrame.size.height = max(
+            item.minimumSize.height,
+            newFrame.size.height
+        )
         
         print(#function, "newWidth: \(newWidth), newHeight: \(newHeight)")
         

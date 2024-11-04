@@ -18,23 +18,19 @@ public enum BentoEvent<Item: BentoItem> {
 
 @Observable
 public class BentoModel<Item: BentoItem> {
-    public var items: [Item] {
-        get {
-            undoManager.currentItems
-        }
-        
-        set {
-            undoManager.currentItems = newValue
+    public var items: [Item] = [] {
+        didSet { // not good, but worked
+            undoManager.recordCheckpoint()
         }
     }
     
-    public private(set) var undoManager: BentoUndoManager<Item> = BentoUndoManager()
+    public private(set) var undoManager: BentoUndoManager<Item>
     
     internal var minItemSize: CGSize {
         items.reduce(
             CGSize(
-                width: CGFloat.greatestFiniteMagnitude,
-                height: CGFloat.greatestFiniteMagnitude
+                width: containerSize.width + 1,
+                height: containerSize.height + 1
             )
         ) {
             CGSize(width: min($0.width, $1.width), height: min($0.height, $1.height))
@@ -44,6 +40,8 @@ public class BentoModel<Item: BentoItem> {
     public init() where Item == DefaultBentoItem {
         self.eventsHandler = { (_: BentoEvent<Item>) -> Void in }
         self.items = []
+        self.undoManager = BentoUndoManager(parent: nil)
+        self.undoManager.parent = self
     }
     
     public init(
@@ -52,6 +50,8 @@ public class BentoModel<Item: BentoItem> {
     ) {
         self.eventsHandler = eventsHandler
         self.items = items
+        self.undoManager = BentoUndoManager(parent: nil)
+        self.undoManager.parent = self
     }
     
     public var eventsHandler: (BentoEvent<Item>) -> Void
@@ -71,12 +71,9 @@ public class BentoModel<Item: BentoItem> {
     
     public var columnsCount: Int { gridColumns.count }
     public let paddingRows = 6
-//    public var placehoders: [Int] {
-//        Array(
-//            repeating: 0,
-//            count: columnsCount * (items.reduce(0, {max($0, $1.y + $1.height)}) + paddingRows)
-//        ).enumerated().map{$0.offset}
-//    }
+    
+    public var canMove: Bool = true
+    public var canResize: Bool = true
     
     public var draggedItemID: UUID?
     public var draggedItem: Item? {
@@ -376,7 +373,113 @@ public class BentoModel<Item: BentoItem> {
         return Array(hinders)
     }
     
-//    func getAllHinder
+    public func swapItemFrame(aID: UUID, bID: UUID) {
+        guard let aIndex = self.items.firstIndex(where: {$0.itemID == aID}),
+              let bIndex = self.items.firstIndex(where: {$0.itemID == bID}) else {
+            print("Swap failed, find no items.")
+            return
+        }
+        let aFrame = self.items[aIndex].frame
+        let bFrame = self.items[bIndex].frame
+        self.items[aIndex].frame = bFrame
+        self.items[bIndex].frame = aFrame
+    }
+    
+    struct CrossHinders: CustomStringConvertible {
+        var top: [Item]
+        var leading: [Item]
+        var bottom: [Item]
+        var trailing: [Item]
+        
+        init(top: [Item], leading: [Item], bottom: [Item], trailing: [Item]) {
+            self.top = top
+            self.leading = leading
+            self.bottom = bottom
+            self.trailing = trailing
+        }
+        
+        init() {
+            self.top = []
+            self.leading = []
+            self.bottom = []
+            self.trailing = []
+        }
+        
+        var description: String {
+"""
+CrossHinders
+------------------------------------
+top: \(top)
+leading: \(leading)
+bottom: \(bottom)
+trailing: \(trailing)
+"""
+        }
+    }
+    
+    internal func getCrossHinders(of item: Item) -> CrossHinders {
+        let theItem = item
+        var crossHinders = CrossHinders()
+        for item in self.items.filter({$0.itemID != theItem.itemID}) {
+            let verticalOverlay = theItem.frame.minX < item.frame.maxX && theItem.frame.maxX > item.frame.minX
+            let horizontalOverlay = theItem.frame.minY < item.frame.maxY && theItem.frame.maxY > item.frame.minY
+            
+            // top
+            if item.y + item.height <= theItem.y, verticalOverlay {
+                crossHinders.top.append(item)
+            }
+            
+            // bottom
+            if item.y >= theItem.y + theItem.height, verticalOverlay {
+                crossHinders.bottom.append(item)
+            }
+            
+            // leading
+            if item.x + item.width <= theItem.x, horizontalOverlay {
+                crossHinders.leading.append(item)
+            }
+            
+            // trailing
+            if item.x >= theItem.x + theItem.width, horizontalOverlay {
+                crossHinders.trailing.append(item)
+            }
+        }
+        return crossHinders
+    }
+    
+    public func stretchItem(id itemID: UUID) {
+        guard let itemIndex = self.items.firstIndex(where: {$0.itemID == itemID}) else { return }
+        
+        var theItem = self.items[itemIndex]
+        
+        var newFrame = theItem.frame
+        
+        let crossHinders = getCrossHinders(of: theItem)
+        
+        newFrame.origin.y = crossHinders.top.reduce(-self.bentoGap) {
+            max($0, $1.frame.maxY)
+        } + self.bentoGap
+        if !crossHinders.bottom.isEmpty {
+            newFrame.size.height = crossHinders.bottom.dropFirst().reduce(crossHinders.bottom.first!.y) {
+                min($0, $1.frame.minY)
+            } - newFrame.origin.y - self.bentoGap
+        } else {
+            newFrame.size.height = theItem.frame.maxY - newFrame.origin.y
+        }
+        
+        theItem.frame = newFrame
+        let crossHinders2 = getCrossHinders(of: theItem)
+        
+        newFrame.origin.x = crossHinders2.leading.reduce(-self.bentoGap) {
+            max($0, $1.frame.maxX)
+        } + self.bentoGap
+        newFrame.size.width = crossHinders2.trailing.reduce(containerSize.width) {
+            min($0, $1.frame.minX)
+        } - newFrame.origin.x - self.bentoGap
+
+        
+        self.items[itemIndex].frame = newFrame
+    }
     
     // MARK: - Auxiliary line
     /// HorizontalAlignemnt - leading <-> trailing
@@ -459,26 +562,28 @@ public class BentoModel<Item: BentoItem> {
         }
     }
     
-    func getAvailableAlignments(frame: CGRect) -> [AlignInfo] {
+    /// Get all available alignments for the current frame.
+    func getAvailableAlignments(frame: CGRect, threshold: CGFloat? = nil) -> [AlignInfo] {
+        let threshold = threshold ?? alignmentThreshold
         var results: [AlignInfo] = []
         for horizontalAlignment in horizontalAlignments {
-            if horizontalAlignment <= frame.minX + alignmentThreshold, horizontalAlignment >= frame.minX - alignmentThreshold {
+            if horizontalAlignment <= frame.minX + threshold, horizontalAlignment >= frame.minX - threshold {
                 results.append(.horizontal(.init(alignment: .leading, value: horizontalAlignment)))
-            } else if horizontalAlignment <= frame.midX + alignmentThreshold, horizontalAlignment >= frame.midX - alignmentThreshold {
+            } else if horizontalAlignment <= frame.midX + threshold, horizontalAlignment >= frame.midX - threshold {
                     results.append(.horizontal(.init(alignment: .center, value: horizontalAlignment)))
-            } else if horizontalAlignment <= frame.maxX + alignmentThreshold, horizontalAlignment >= frame.maxX - alignmentThreshold {
+            } else if horizontalAlignment <= frame.maxX + threshold, horizontalAlignment >= frame.maxX - threshold {
                 results.append(.horizontal(.init(alignment: .trailing, value: horizontalAlignment)))
             }
         }
         for verticalAlignment in verticalAlignments {
-            if verticalAlignment <= frame.minY + alignmentThreshold,
-               verticalAlignment >= frame.minY - alignmentThreshold {
+            if verticalAlignment <= frame.minY + threshold,
+               verticalAlignment >= frame.minY - threshold {
                 results.append(.vertical(.init(alignment: .top, value: verticalAlignment)))
-            } else if verticalAlignment <= frame.midY + alignmentThreshold,
-                      verticalAlignment >= frame.midY - alignmentThreshold {
+            } else if verticalAlignment <= frame.midY + threshold,
+                      verticalAlignment >= frame.midY - threshold {
                 results.append(.vertical(.init(alignment: .center, value: verticalAlignment)))
-            } else if verticalAlignment <= frame.maxY + alignmentThreshold,
-                      verticalAlignment >= frame.maxY - alignmentThreshold {
+            } else if verticalAlignment <= frame.maxY + threshold,
+                      verticalAlignment >= frame.maxY - threshold {
                 results.append(.vertical(.init(alignment: .bottom, value: verticalAlignment)))
             }
         }
@@ -486,6 +591,7 @@ public class BentoModel<Item: BentoItem> {
         return results
     }
     
+    /// Get the frame of the closest alignment.
     func getMostAlignedFrame(
         frame: CGRect,
         direction: UnitPoint? = nil
@@ -679,41 +785,92 @@ public class BentoUndoManager<Item: BentoItem> {
     @ObservationIgnored
     private var newCheckpointCancellable: AnyCancellable?
     
-    var canUndo: Bool { currentIndex > 0 }
-    var canRedo: Bool { currentIndex < checkpoints.endIndex - 1 }
+    public var canUndo: Bool { currentIndex > 0 }
+    public var canRedo: Bool { currentIndex < checkpoints.endIndex - 1 }
+        
+    @ObservationIgnored
+    var parent: BentoModel<Item>?
     
-    init() {
+    init(
+        parent: BentoModel<Item>?
+    ) {
+        self.parent = parent
         newCheckpointCancellable = newCheckpointPublisher.debounce(for: 0.5, scheduler: RunLoop.main).sink {
             self.readyToMakeNewCheckpoints = true
         }
     }
     
     private var currentIndex = 0
-    public var currentItems: [Item] {
-        get { checkpoints[currentIndex] }
-        set {
-            if readyToMakeNewCheckpoints {
-                if !checkpoints.isEmpty {
-                    checkpoints.removeLast(checkpoints.endIndex - 1 - currentIndex)
-                }
-                checkpoints.append(newValue)
-                currentIndex = checkpoints.endIndex - 1
-                self.readyToMakeNewCheckpoints = false
-            } else {
-                checkpoints[currentIndex] = newValue
-            }
-            newCheckpointPublisher.send()
-        }
-    }
+//    {
+//        get { checkpoints[currentIndex] }
+//        set {
+//            if readyToMakeNewCheckpoints {
+//                if !checkpoints.isEmpty {
+//                    checkpoints.removeLast(checkpoints.endIndex - 1 - currentIndex)
+//                }
+//                checkpoints.append(newValue)
+//                currentIndex = checkpoints.endIndex - 1
+//                self.readyToMakeNewCheckpoints = false
+//            } else {
+//                checkpoints[currentIndex] = newValue
+//            }
+//            newCheckpointPublisher.send()
+//        }
+//    }
+    
     
     public func undo() {
         currentIndex = max(0, currentIndex - 1)
+        applyChanges()
     }
     public func redo() {
         currentIndex = min(checkpoints.endIndex - 1, currentIndex + 1)
+        applyChanges()
     }
     
     
+    public func recordCheckpoint() {
+        guard let parent else { return }
+        if readyToMakeNewCheckpoints {
+            if !checkpoints.isEmpty {
+                checkpoints.removeLast(checkpoints.endIndex - 1 - currentIndex)
+            }
+            checkpoints.append(parent.items.map{$0.duplicated(withSameID: true)})
+            currentIndex = checkpoints.endIndex - 1
+            self.readyToMakeNewCheckpoints = false
+        } else {
+            checkpoints[currentIndex] = parent.items.map{$0.duplicated(withSameID: true)}
+        }
+        newCheckpointPublisher.send()
+    }
+    
+    private func applyChanges() {
+        guard let parent else { return }
+        let targetItems = self.checkpoints[currentIndex]
+        
+        var newItems = parent.items
+        
+        // delete not in targetItems
+        for (i, item) in parent.items.enumerated() {
+            if !targetItems.contains(where: {$0.itemID == item.itemID}) {
+                newItems.remove(at: i)
+                parent.eventsHandler(.didRemove(item.itemID))
+            }
+        }
+        
+        // change & insert not in parent items
+        for (i, item) in targetItems.enumerated() {
+            if var originalItem = newItems.first(where: {$0.itemID == item.itemID}) {
+                originalItem.applyChange(from: item)
+            } else {
+                let newItem = item.duplicated(withSameID: true)
+                newItems.append(newItem)
+                parent.eventsHandler(.didInsert(newItem))
+            }
+        }
+        
+        self.parent?.items = newItems
+    }
 }
 
 
