@@ -34,7 +34,13 @@ public enum BentoItemRestriction: Codable, Hashable, Sendable {
 
 public protocol BentoItem: Identifiable, Hashable, Transferable, Sendable {
     var itemID: UUID { get set }
-    var frame: CGRect { get set }
+//    var frame: CGRect { get set }
+    
+    var x: CGFloat { get set }
+    var y: CGFloat { get set }
+    var width: CGFloat { get set }
+    var height: CGFloat { get set }
+    
     var borderRadius: CGFloat { get }
     
     var restrictions: [BentoItemRestriction] { get set }
@@ -46,23 +52,35 @@ public protocol BentoItem: Identifiable, Hashable, Transferable, Sendable {
 }
 
 extension BentoItem {
+    public     var frame: CGRect {
+        get {
+            CGRect(x: x, y: y, width: width, height: height)
+        }
+        set {
+            self.x = newValue.origin.x
+            self.y = newValue.origin.y
+            self.width = newValue.size.width
+            self.height = newValue.size.height
+        }
+    }
     
-    public var x: CGFloat {
-        get { frame.origin.x }
-        set { frame.origin.x = newValue }
-    }
-    public var y: CGFloat {
-        get { frame.origin.y }
-        set { frame.origin.y = newValue }
-    }
-    public var width: CGFloat {
-        get { frame.size.width }
-        set { frame.size.width = newValue }
-    }
-    public var height: CGFloat {
-        get { frame.size.height }
-        set { frame.size.height = newValue }
-    }
+    
+//    public var x: CGFloat {
+//        get { frame.origin.x }
+//        set { frame.origin.x = newValue }
+//    }
+//    public var y: CGFloat {
+//        get { frame.origin.y }
+//        set { frame.origin.y = newValue }
+//    }
+//    public var width: CGFloat {
+//        get { frame.size.width }
+//        set { frame.size.width = newValue }
+//    }
+//    public var height: CGFloat {
+//        get { frame.size.height }
+//        set { frame.size.height = newValue }
+//    }
     
     public static var transferRepresentation: ProxyRepresentation<Self, String>  {
         ProxyRepresentation(exporting: { item in
@@ -144,7 +162,7 @@ extension BentoItem {
 //            }
 //        }
         
-        return CGSize(width: 20, height: 20)
+        return CGSize(width: 30, height: 30)
     }
 }
 
@@ -152,7 +170,11 @@ public struct DefaultBentoItem: BentoItem {
     
     public var id: UUID { itemID }
     public var itemID = UUID()
-    public var frame: CGRect
+    public var x: CGFloat
+    public var y: CGFloat
+    public var width: CGFloat
+    public var height: CGFloat
+    
     public var borderRadius: CGFloat = 4
     
     public var restrictions: [BentoItemRestriction] = []
@@ -169,7 +191,7 @@ public struct DefaultBentoItem: BentoItem {
     }
     
     public init() {
-        self.init(x: 0, y: 0, width: 1, height: 1)
+        self.init(x: 0, y: 0, width: 100, height: 100)
     }
     
     public init(
@@ -181,7 +203,10 @@ public struct DefaultBentoItem: BentoItem {
         restrictions: [BentoItemRestriction] = []
     ) {
         self.itemID = id
-        self.frame = CGRect(x: x, y: y, width: width, height: height)
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
         self.restrictions = restrictions
         self.color = .accentColor
         self.isGradient = true
@@ -194,10 +219,10 @@ public struct DefaultBentoItem: BentoItem {
     public func duplicated(withSameID: Bool = false) -> DefaultBentoItem {
         DefaultBentoItem(
             id: withSameID ? self.itemID : UUID(),
-            x: self.x,
-            y: self.y,
-            width: self.width,
-            height: self.height,
+            x: x,
+            y: y,
+            width: width,
+            height: height,
             restrictions: self.restrictions
         )
     }

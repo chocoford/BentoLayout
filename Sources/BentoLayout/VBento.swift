@@ -35,7 +35,7 @@ public struct VBento<Item: BentoItem, ItemContent: View, OverlayAccessoryView: V
         ZStack(alignment: .topLeading) {
             Rectangle().fill(Color.clear)
             
-            BentoPlaceholderView<Item>()
+//            BentoPlaceholderView<Item>()
             
             ZStack(alignment: .topLeading) {
                 // anchor top
@@ -83,6 +83,9 @@ public struct VBento<Item: BentoItem, ItemContent: View, OverlayAccessoryView: V
             }
         }
         .environment(bentoModel)
+        .onChange(of: bentoModel.items.count) {
+            bentoModel.flushState()
+        }
     }
 }
 

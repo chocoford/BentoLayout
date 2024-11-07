@@ -18,14 +18,11 @@ public enum BentoEvent<Item: BentoItem> {
 
 @Observable
 public class BentoModel<Item: BentoItem> {
-    public var items: [Item] = [] {
-        didSet { // not good, but worked
-            undoManager.recordCheckpoint()
-        }
-    }
+    public var items: [Item] = []
     
     public private(set) var undoManager: BentoUndoManager<Item>
     
+    /// 所有items中的最小限制size
     internal var minItemSize: CGSize {
         items.reduce(
             CGSize(
@@ -33,7 +30,7 @@ public class BentoModel<Item: BentoItem> {
                 height: containerSize.height + 1
             )
         ) {
-            CGSize(width: min($0.width, $1.width), height: min($0.height, $1.height))
+            CGSize(width: min($0.width, $1.minimumSize.width), height: min($0.height, $1.minimumSize.height))
         }
     }
     
@@ -179,9 +176,6 @@ public class BentoModel<Item: BentoItem> {
     
     /// Insert a new bento item.
     public func addBentoItem(_ item: Item) {
-        // temp
-        defer { flushState() }
-        
         var item = item
         
         var isOverlap = false
@@ -223,13 +217,11 @@ public class BentoModel<Item: BentoItem> {
     public func removeBentoItem(_ item: Item) {
         self.items.removeAll(where: {$0.itemID == item.itemID})
         self.eventsHandler(.didRemove(item.itemID))
-        flushState()
     }
     
     public func removeBentoItem(id itemID: UUID) {
         self.items.removeAll(where: {$0.itemID == itemID})
         self.eventsHandler(.didRemove(itemID))
-        flushState()
     }
     
     /// Rearrange bento items.
@@ -269,31 +261,8 @@ public class BentoModel<Item: BentoItem> {
         flushState()
     }
     
-//    public func partitionBentoItems() {
-//        guard !self.items.isEmpty else { return }
-//        var doneItems: [Item] = [self.items.first!]
-//        
-//        // get the bounds
-//        let maxX = self.items.reduce(0) {
-//            max($0, $1.x)
-//        }
-//        
-//        let theTopLeadingItem = self.items.dropFirst().reduce(self.items.first!) {
-//            if $1.x < $0.x, $1.y < $0.y {
-//                return $1
-//            } else {
-//                return $0
-//            }
-//        }
-//        
-//        let items = self.items.dropFirst()
-//        
-//        for i in stride(from: 0, to: maxX, by: bentoBaseSize) {
-//            
-//        }
-//    }
-    
     /// n rows x m colums
+    /// 不需要覆盖满，最后边缘的部分不够一格的就不成为一格
     var gridOccupies: [[[UUID]]] = []
     /// true - occupied
     var gridOccupyState: [[Bool]] {
@@ -304,22 +273,63 @@ public class BentoModel<Item: BentoItem> {
         }
     }
     
+    /// Rebuild the grid occupy state
     func flushGridOccupyState() {
         let start = Date()
-        gridOccupies = stride(from: 0, to: containerSize.height, by: minItemSize.height).map { y in
-            stride(from: 0, to: containerSize.width, by: minItemSize.width).map { x in
+        gridOccupies = stride(from: 0, to: containerSize.height + minItemSize.height, by: minItemSize.height).map { y in
+            stride(from: 0, to: containerSize.width + minItemSize.width, by: minItemSize.width).map { x in
                 let rect = CGRect(x: x, y: y, width: minItemSize.width, height: minItemSize.height)
                 return self.items.filter{ $0.frame.intersects(rect) }.map{ $0.itemID }
             }
         }
-        print(
-            "[flushGridOccupyState] time cost: \(-start.timeIntervalSinceNow)",
-            "gridOccupies: [\(gridOccupies.count) x \(gridOccupies.first?.count ?? 0)] count: \(gridOccupies.flatMap{$0}.count)",
-            "containerSize: \(containerSize), minItemSize: \(minItemSize)",
-            "gridOccupies: \(gridOccupies)",
-            "---------------------------------",
-            separator: "\n"
-        )
+//        print(
+//            "[flushGridOccupyState] time cost: \(-start.timeIntervalSinceNow)",
+//            "gridOccupies: [\(gridOccupies.count) x \(gridOccupies.first?.count ?? 0)]",
+//            gridOccupies.map {
+//                $0.map { "\(!$0.isEmpty ? "+" : "-")" }.joined(separator: " ")
+//            }.joined(separator: "\n"),
+//            separator: "\n"
+//        )
+    }
+    
+    /// Update the occupy state
+    func updateOccupyState(region: CGRect) {
+        let start = Date()
+        
+        let minI = Int(region.minX / minItemSize.width)
+        let maxI = Int(region.maxX / minItemSize.width)
+        let minJ = Int(region.minY / minItemSize.height)
+        let maxJ = Int(region.maxY / minItemSize.height)
+        
+        let boundsI = Int(containerSize.width / minItemSize.width)
+        let boundsJ = Int(containerSize.height / minItemSize.height)
+        
+        if maxI > boundsI || maxJ > boundsJ {
+            print("[updateOccupyState] ------ !!!! Out of bounds !!!!")
+            return
+        }
+        
+        for j in stride(from: minJ, through: min(maxJ, boundsJ), by: 1) {
+            for i in stride(from: minI, through: min(maxI, boundsI), by: 1) {
+                let rect = CGRect(
+                    x: CGFloat(i) * minItemSize.width,
+                    y: CGFloat(j) * minItemSize.height,
+                    width: minItemSize.width,
+                    height: minItemSize.height
+                )
+                gridOccupies[j][i] = Array(self.items.filter{ $0.frame.intersects(rect) }.map{ $0.itemID })
+            }
+        }
+//        print(
+//            "[updateOccupyState] region: \(region), time cost: \(-start.timeIntervalSinceNow)",
+//            "([\(minI) : \(maxI)], [\(minJ) : \(maxJ)))",
+//            "gridOccupies: [\(gridOccupies.count) x \(gridOccupies.first?.count ?? 0)]",
+////            gridOccupies.map {
+////                $0.map { "\(!$0.isEmpty ? "+" : "-")" }.joined(separator: " ")
+////            }.joined(separator: "\n"),
+////            self.items.map{$0.frame.description}.joined(separator: "\n"),
+//            separator: "\n"
+//        )
     }
     
     private func getGridItems(at point: CGPoint) -> [Item] {
@@ -341,35 +351,98 @@ public class BentoModel<Item: BentoItem> {
         return self.items.filter({$0.frame.intersects(rect)})
     }
     
-    func getPotentialHinderItems(of item: Item) -> [Item] {
-        let frame = item.frame
-        let itemsMap = self.items.filter({$0.itemID != item.itemID}).map {
+    /// Get the potential hinders of the specific item.
+    /// A potential hinder is detected by checking if there are any other items within at least a one(or more)-cell radius around the specified item.
+    /// -----------------------------
+    /// |      |      |      |_ _|_ _|_  _|_  _|_  _|      |
+    /// |      |      |      |      |      |      |      |      |      |
+    /// |      |      |      |      |xxxxxxxxxxx|      |      |
+    /// |      |      |      |      |xxxxxxxxxxx|      |      |
+    /// |      |      |      |      |xxxxxxxxxxx|      |      |
+    /// |      |      |      |_ _|_  _|_ _|_  _|_  _|      |
+    /// -----------------------------
+    func getAdjacentHinders(
+        of itemID: UUID,
+        frame: CGRect,
+        direction: [UnitPoint] = [.top, .bottom, .leading, .trailing],
+        radius: Int = 0 // ignored
+    ) -> [Item] {
+        let itemsMap = self.items.filter({$0.itemID != itemID}).map {
             [$0.itemID : $0]
         }.merged()
         
         var hinders = Set<Item>()
-        // get grid items
-        for y in stride(
-            from: max(0, Int(frame.minY / minItemSize.height) - 1),
-            through: min(Int(containerSize.height / minItemSize.height) - 1, Int(frame.maxY / minItemSize.height) + 1),
-            by: 1
-        ) {
-            for x in stride(
-                from: max(0, Int(frame.minX / minItemSize.width) - 1),
-                through: min(Int(containerSize.width / minItemSize.width) - 1, Int(frame.maxX / minItemSize.width) + 1),
-                by: 1
-            ) {
-                guard y < gridOccupies.count, let yFirst = gridOccupies.first, x < yFirst.count else {
-                    continue
-                }
-                for itemID in gridOccupies[y][x] {
-                    if let item = itemsMap[itemID] {
-                        hinders.insert(item)
+        
+        let boundsI = Int(containerSize.width / minItemSize.width) - 1
+        let boundsJ = Int(containerSize.height / minItemSize.height) - 1
+        
+        let minI = Int(max(0, frame.minX - 2 * bentoGap) / minItemSize.width)
+        let minJ = Int(max(0, frame.minY - 2 * bentoGap) / minItemSize.height)
+        let maxI = min(boundsI, Int((frame.maxX + 2 * bentoGap) / minItemSize.width))
+        let maxJ = min(boundsJ, Int((frame.maxY + 2 * bentoGap) / minItemSize.height))
+        
+        if direction.contains(.top) {
+            for y in stride(from: minJ, through: maxJ, by: 1) {
+                for x in stride(from: minI, through: maxI, by: 1) {
+                    for itemID in gridOccupies[y][x] {
+                        if let hinder = itemsMap[itemID],
+                           frame.minY > hinder.frame.minY,
+                           frame.minX < hinder.frame.maxX,
+                           frame.maxX > hinder.frame.minX {
+                            hinders.insert(hinder)
+                        }
                     }
                 }
             }
         }
-//        print(#function, hinders)
+        if direction.contains(.leading) {
+            for y in stride(from: minJ, through: maxJ, by: 1) {
+                for x in stride(from: minI, through: maxI, by: 1) {
+                    for itemID in gridOccupies[y][x] {
+                        if let hinder = itemsMap[itemID],
+                           frame.minX > hinder.frame.minX,
+                           frame.minY < hinder.frame.maxY,
+                           frame.maxY > hinder.frame.minY {
+                            hinders.insert(hinder)
+                        }
+                    }
+                }
+            }
+        }
+        if direction.contains(.bottom) {
+            for y in stride(from: minJ, through: maxJ, by: 1) {
+                for x in stride(from: minI, through: maxI, by: 1) {
+                    for itemID in gridOccupies[y][x] {
+                        if let hinder = itemsMap[itemID],
+                           frame.minY < hinder.frame.minY,
+                           frame.minX < hinder.frame.maxX,
+                           frame.maxX > hinder.frame.minX {
+                            hinders.insert(hinder)
+                        }
+                    }
+                }
+            }
+        }
+        if direction.contains(.trailing) {
+            for y in stride(from: minJ, through: maxJ, by: 1) {
+                // minI: 防止过快导致maxI超过了hinder.minX
+                for x in stride(from: minI, through: maxI, by: 1) {
+                    for itemID in gridOccupies[y][x] {
+                        if let hinder = itemsMap[itemID],
+                           // minX: 同样为了防止过快导致穿过去
+                           frame.minX < hinder.frame.minX,
+                           frame.minY < hinder.frame.maxY,
+                           frame.maxY > hinder.frame.minY {
+                            hinders.insert(hinder)
+                        }
+                    }
+                }
+            }
+        }
+        
+        
+        
+        print(#function, self.items.first(where: {$0.itemID == itemID})?.frame, "hinders: \(hinders.map{$0.frame})")
         return Array(hinders)
     }
     
@@ -383,6 +456,22 @@ public class BentoModel<Item: BentoItem> {
         let bFrame = self.items[bIndex].frame
         self.items[aIndex].frame = bFrame
         self.items[bIndex].frame = aFrame
+        flushState()
+    }
+    
+    struct HinderTree: CustomStringConvertible {
+        var root: UUID
+        var hinders: [UUID]
+        
+        var description: String {
+            var description = "HinderTree: \(root)"
+            
+            for hinder in hinders {
+                description += "\n|---\(hinder)"
+            }
+            
+            return description
+        }
     }
     
     struct CrossHinders: CustomStringConvertible {
@@ -417,7 +506,7 @@ trailing: \(trailing)
         }
     }
     
-    internal func getCrossHinders(of item: Item) -> CrossHinders {
+    internal func getCrossHinders(of item: Item, recursive: Bool = false) -> CrossHinders {
         let theItem = item
         var crossHinders = CrossHinders()
         for item in self.items.filter({$0.itemID != theItem.itemID}) {
@@ -547,8 +636,9 @@ trailing: \(trailing)
             }
         }
     }
-    
+
     func flushAlignments() {
+        let start = Date()
         horizontalAlignments.removeAll()
         verticalAlignments.removeAll()
         let checkedItems = items.filter({$0.itemID != draggedItemID && $0.itemID != resizedItemID})
@@ -560,8 +650,9 @@ trailing: \(trailing)
             verticalAlignments.insert(item.frame.midY)
             verticalAlignments.insert(item.frame.maxY)
         }
+        print("[flush alignments] time cost: \(-start.timeIntervalSinceNow)")
     }
-    
+
     /// Get all available alignments for the current frame.
     func getAvailableAlignments(frame: CGRect, threshold: CGFloat? = nil) -> [AlignInfo] {
         let threshold = threshold ?? alignmentThreshold
@@ -729,9 +820,25 @@ trailing: \(trailing)
     }
     
     /// This should be called every time item has been dragged/resized (before)
-    func flushState() {
-        flushGridOccupyState()
+    func flushState(regions: [CGRect] = []) {
+        let start = Date()
+//        print("flushState - regions: \(regions)")
+        if regions.isEmpty {
+            flushGridOccupyState()
+        } else {
+            for region in regions {
+                updateOccupyState(region: region)
+            }
+        }
         flushAlignments()
+        print(
+            "[flushState] time cost: \(-start.timeIntervalSinceNow)",
+            "gridOccupies: [\(gridOccupies.count) x \(gridOccupies.first?.count ?? 0)]",
+            gridOccupies.map {
+                $0.map { "\(!$0.isEmpty ? "+" : "-")" }.joined(separator: " ")
+            }.joined(separator: "\n"),
+            separator: "\n"
+        )
     }
 }
 

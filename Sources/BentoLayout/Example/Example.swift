@@ -11,8 +11,13 @@ import ChocofordUI
 internal struct ExampleBentoItem: BentoItem {
     public var id: UUID { itemID }
     public var itemID = UUID()
-    public var frame: CGRect
-    public var borderRadius: CGFloat = 4
+    
+    var x: CGFloat
+    var y: CGFloat
+    var width: CGFloat
+    var height: CGFloat
+    
+    var borderRadius: CGFloat = 4
     
     public var restrictions: [BentoItemRestriction] = []
     public var showResizeHandler: Bool { true }
@@ -28,7 +33,7 @@ internal struct ExampleBentoItem: BentoItem {
     }
     
     public init() {
-        self.init(x: 0, y: 0, width: 1, height: 1)
+        self.init(x: 0, y: 0, width: 100, height: 100)
     }
     
     public init(
@@ -41,7 +46,10 @@ internal struct ExampleBentoItem: BentoItem {
         color: Color = .accentColor
     ) {
         self.itemID = id
-        self.frame = CGRect(x: x, y: y, width: width, height: height)
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
         self.restrictions = restrictions
         self.color = color
         self.isGradient = true
@@ -222,10 +230,11 @@ internal struct BentoExampleView: View {
                 Button {
                     bentoModel.addBentoItem(
                         ExampleBentoItem(
-                            x: 0,
-                            y: 0,
+                            x: 160,
+                            y: 160,
                             width: 120,
                             height: 120,
+                            restrictions: [.minSize(BentoItemSize(width: 40, height: 40))],
                             color: [Color.blue, .gray, .teal, .orange, .pink, .mint, .red, .indigo].randomElement()!
                         )
                     )
